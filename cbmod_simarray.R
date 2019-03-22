@@ -38,20 +38,5 @@ cb_sim_array$dat_seed <- sample.int(1e7,size=nrow(cb_sim_array))
 cb_sim_array$samp_seed <- sample.int(1e7,size=nrow(cb_sim_array))
 cb_sim_array$sim_id <- 1:nrow(cb_sim_array)
 
-## temp
-getTheta <- function(rho,p){  (rho*sqrt(p*(1-p))) / dnorm(qnorm(p)) }
-
-# treatment
-mu_2 <- sim_params$mu_2
-sigma2_2 <- sim_params$sigma2_2
-p_2 <- sim_params$p_2
-rho_2 <- sim_params$rho_2
-
-foo<-cb_sim_array[,c("rho_2","p_2")]
-
-thets<-mapply(getTheta,foo[,1],foo[,2])
-
-max(thets)
-
 # save simulation array
 saveRDS(cb_sim_array, file = file.path(wdir,"cb_sim_array.rds"))
