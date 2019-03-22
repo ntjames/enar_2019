@@ -21,10 +21,10 @@ invisible(lapply(libs, library, character.only = TRUE))
 
 Simulations
 
-1) binary - binary (Meester example)
+1) binary - binary
 2) continuous - continuous
 3) continuous - binary (ex. 1 from Costa)
-4) ordinal rather than binary??
+4) continuous - ordinal ??
 
 For binary use logistic or probit?? 
 use general log-likelihood function ??
