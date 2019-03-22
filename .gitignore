@@ -1,0 +1,14 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+archive/
+
+sims/
+
+*.rds
+
+code\.Rproj
+
+Makevars
