@@ -15,7 +15,7 @@ p_1 <- 0.1
 rho_1 <- 0.1
 
 ns <- c(50, 100, 200, 400) # sample size (n per arm) 
-rho_2s <- c(0.1, 0.35, 0.6) # tetrachoric correlation in treatment group
+rho_2s <- c(0.1, 0.3, 0.5) # correlation in treatment group
 mu_2s <-mu_1 + c(0, 100, 150) # effectiveness in trt
 sigma2_2s <- 100^2
 p_2s <-p_1 + c(0, 0.3, 0.6) # prob AE in trt
@@ -37,6 +37,21 @@ cb_sim_array <- a3[sample(1:nrow(a3)),]
 cb_sim_array$dat_seed <- sample.int(1e7,size=nrow(cb_sim_array))
 cb_sim_array$samp_seed <- sample.int(1e7,size=nrow(cb_sim_array))
 cb_sim_array$sim_id <- 1:nrow(cb_sim_array)
+
+## temp
+getTheta <- function(rho,p){  (rho*sqrt(p*(1-p))) / dnorm(qnorm(p)) }
+
+# treatment
+mu_2 <- sim_params$mu_2
+sigma2_2 <- sim_params$sigma2_2
+p_2 <- sim_params$p_2
+rho_2 <- sim_params$rho_2
+
+foo<-cb_sim_array[,c("rho_2","p_2")]
+
+thets<-mapply(getTheta,foo[,1],foo[,2])
+
+max(thets)
 
 # save simulation array
 saveRDS(cb_sim_array, file = file.path(wdir,"cb_sim_array.rds"))
