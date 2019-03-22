@@ -557,8 +557,82 @@ generated quantities {
 "
 ```
 
+Troubleshoot errors
 
-try multivariate probit model; should match above, see STAN user's guide v2.18 sec 2.15 pdf p 42; not really working so far
+```{r, eval=FALSE}
+
+library(mvtnorm)
+expose_stan_functions(stanc(model_code = mod_bb_jnt_code))
+
+#binormal_cdf(real z1, real z2, real rho)
+
+binormal_cdf(0.3, -0.5, 0.2)
+pmvnorm(upper=c(0.3, -0.5), corr=matrix(c(1,0.2,0.2,1), ncol=2))[[1]]
+
+binormal_cdf(1.2, 1.2, 0.2)
+pmvnorm(upper=c(1.2, 1.2), corr=matrix(c(1,0.2,0.2,1), ncol=2))[[1]]
+
+
+#pCop_norm(real u1, real u2, real theta)
+thet <- 0.5
+nc<-normalCopula(thet)
+
+pCopula(c(0.2, 0.7), nc)
+pCop_norm(0.2, 0.7, thet)
+
+pCopula(c(0.1, 0.9), nc)
+pCop_norm(0.1, 0.9, thet)
+
+pCopula(c(0.5, 0.5), nc)
+pCop_norm(0.5, 0.5, thet)
+
+pCopula(c(0.45, 0.5), nc)
+pCop_norm(0.45, 0.5, thet)
+
+
+# initializaton
+y1 <- 1
+y2 <- 0
+p1 <- 0.2
+p2 <- 0.5
+
+U1 = pbinom(y1, 1, p1) 
+U1_prime = pbinom(y1-1, 1, p1)
+U2 = pbinom(y2, 1, p2) 
+U2_prime = pbinom(y2-1, 1, p2)
+
+if (0){
+# if U is 0, Z is -Inf
+Z1 = qnorm(U1) 
+Z1_prime = qnorm(U1_prime)
+Z2 = qnorm(U2)
+Z2_prime = qnorm(U2_prime)
+
+binormal_cdf(Z1, Z2, theta)-
+binormal_cdf(Z1_prime, Z2, theta)-
+binormal_cdf(Z1, Z2_prime, theta) +
+binormal_cdf(Z1_prime, Z2_prime, theta)
+
+# likelihood for joint dist. using differences
+cP = pCop_norm(U1, U2, theta) -
+            pCop_norm(U1_prime, U2, theta) -
+            pCop_norm(U1, U2_prime, theta) +
+            pCop_norm(U1_prime, U2_prime, theta)
+}
+
+pCopula(c(U1,U2),nc) -
+pCopula(c(U1_prime,U2),nc) -
+pCopula(c(U1,U2_prime),nc) +
+pCopula(c(U1_prime,U2_prime),nc)
+
+#bi_cop_lp(int y1, real p1, int y2, real p2, real theta)
+
+exp(bi_cop_lp(y1, p1, y2, p2, thet))
+```
+
+
+Try multivariate probit model 
+should match above, see STAN user's guide v2.18 sec 2.15 pdf p 42; not really working so far
 can also try https://gist.github.com/khakieconomics/473bbcddf07e463b6b7cae8fa50bd53d
 and see https://stackoverflow.com/questions/36044754/stan-copula-on-observed-variable-and-latent-variable
 ```{r bb-jointmod3, eval=FALSE, cache=TRUE}
@@ -715,108 +789,7 @@ generated quantities {
 "
 ```
 
-Troubleshoot errors
-
-```{r, eval=FALSE}
-
-library(mvtnorm)
-expose_stan_functions(stanc(model_code = mod_bb_jnt_code))
-
-#binormal_cdf(real z1, real z2, real rho)
-
-binormal_cdf(0.3, -0.5, 0.2)
-pmvnorm(upper=c(0.3, -0.5), corr=matrix(c(1,0.2,0.2,1), ncol=2))[[1]]
-
-binormal_cdf(1.2, 1.2, 0.2)
-pmvnorm(upper=c(1.2, 1.2), corr=matrix(c(1,0.2,0.2,1), ncol=2))[[1]]
-
-
-#pCop_norm(real u1, real u2, real theta)
-thet <- 0.5
-nc<-normalCopula(thet)
-
-pCopula(c(0.2, 0.7), nc)
-pCop_norm(0.2, 0.7, thet)
-
-pCopula(c(0.1, 0.9), nc)
-pCop_norm(0.1, 0.9, thet)
-
-pCopula(c(0.5, 0.5), nc)
-pCop_norm(0.5, 0.5, thet)
-
-pCopula(c(0.45, 0.5), nc)
-pCop_norm(0.45, 0.5, thet)
-
-
-# initializaton
-y1 <- 1
-y2 <- 0
-p1 <- 0.2
-p2 <- 0.5
-
-U1 = pbinom(y1, 1, p1) 
-U1_prime = pbinom(y1-1, 1, p1)
-U2 = pbinom(y2, 1, p2) 
-U2_prime = pbinom(y2-1, 1, p2)
-
-if (0){
-# if U is 0, Z is -Inf
-Z1 = qnorm(U1) 
-Z1_prime = qnorm(U1_prime)
-Z2 = qnorm(U2)
-Z2_prime = qnorm(U2_prime)
-
-binormal_cdf(Z1, Z2, theta)-
-binormal_cdf(Z1_prime, Z2, theta)-
-binormal_cdf(Z1, Z2_prime, theta) +
-binormal_cdf(Z1_prime, Z2_prime, theta)
-
-# likelihood for joint dist. using differences
-cP = pCop_norm(U1, U2, theta) -
-            pCop_norm(U1_prime, U2, theta) -
-            pCop_norm(U1, U2_prime, theta) +
-            pCop_norm(U1_prime, U2_prime, theta)
-}
-
-pCopula(c(U1,U2),nc) -
-pCopula(c(U1_prime,U2),nc) -
-pCopula(c(U1,U2_prime),nc) +
-pCopula(c(U1_prime,U2_prime),nc)
-
-#bi_cop_lp(int y1, real p1, int y2, real p2, real theta)
-
-exp(bi_cop_lp(y1, p1, y2, p2, thet))
-```
-
-
-Fit joint binary-binary model
-
-```{r bb-jointfit}
-## joint copula model
-# efficacy marginal model MLE for initialization
-mle_bb_e<-glm(efficacy~trt1+trt2-1,data=dat_bb,family=binomial(link="probit"))
-
-# safety marginal model MLE for initialization
-mle_bb_s<-glm(safety~trt1+trt2-1,data=dat_bb,family=binomial(link="probit"))
-
-#initalize margins at jittered MLE estimate??
-init_list0 <-  list(beta_e=mle_bb_e$coefficients, beta_s=mle_bb_s$coefficients)
-init_list <- lapply(1:n_chains, function(x) lapply(init_list0 ,jitter, amount=2))
-
-# fit joint model
-#system.time()
-# around 90 sec with compilation, around 45 sec after compilation
-# how to use compiled model with new data on ACCRE
-bb_fit <- stan(model_code = mod_bb_jnt_code, data=mod_data_bb, seed=789335,
-             iter=n_iter, chains=n_chains, warmup=n_warmup,
-             init=init_list, control = list(adapt_delta = 0.95))
-
-bb_fit2 <- stan(model_code = mod_bb_jnt_code2, data=mod_data_bb_short, seed=789335,
-             iter=n_iter, chains=n_chains, warmup=n_warmup,
-             init=init_list, control = list(adapt_delta = 0.95))
-```
-
-multivar probit regression
+fit multivar probit regression
 ```{r}
 #  int<lower=1> K; // number of covars
 #  int<lower=1> D; // dimensions of outcome (D=2 in this case)
@@ -840,7 +813,7 @@ bb_fit3 <- stan(model_code = mod_bb_jnt_code3, data=mod_data_bb3, seed=789335,
 ```
 
 
-try with brms
+try MV probit with brms
 ```{r, eval=FALSE}
 library(brms)
 
@@ -879,7 +852,7 @@ stancode(brm_fit4)
 ```
 
 
-try with rstanarm
+try MV probit with rstanarm
 ```{r}
 
 library(rstanarm)
@@ -911,6 +884,38 @@ rsa_fit3 <- stan_mvmer(
 summary(rsa_fit3)
 ```
 
+
+
+
+Fit joint binary-binary model
+
+```{r bb-jointfit}
+## joint copula model
+# efficacy marginal model MLE for initialization
+mle_bb_e<-glm(efficacy~trt1+trt2-1,data=dat_bb,family=binomial(link="probit"))
+
+# safety marginal model MLE for initialization
+mle_bb_s<-glm(safety~trt1+trt2-1,data=dat_bb,family=binomial(link="probit"))
+
+#initalize margins at jittered MLE estimate??
+init_list0 <-  list(beta_e=mle_bb_e$coefficients, beta_s=mle_bb_s$coefficients)
+init_list <- lapply(1:n_chains, function(x) lapply(init_list0 ,jitter, amount=2))
+
+# fit joint model
+#system.time()
+# around 90 sec with compilation, around 45 sec after compilation
+# how to use compiled model with new data on ACCRE
+if(0){
+bb_fit <- stan(model_code = mod_bb_jnt_code, data=mod_data_bb, seed=789335,
+             iter=n_iter, chains=n_chains, warmup=n_warmup,
+             init=init_list, control = list(adapt_delta = 0.95))
+}
+
+# this model is much faster
+bb_fit2 <- stan(model_code = mod_bb_jnt_code2, data=mod_data_bb_short, seed=789335,
+             iter=n_iter, chains=n_chains, warmup=n_warmup,
+             init=init_list, control = list(adapt_delta = 0.95))
+```
 
 
 #### Joint model MCMC diagnostics
@@ -1000,59 +1005,7 @@ mcmc_neff(ratios_bb_fit2, size = 2) + yaxis_text(hjust = 1)
 
 ```
 
-
-multivariate probit diag
-```{r}
-
-p_pars <- c("p_e[1]","p_e[2]","p_s[1]","p_s[2]")
-beta_pars <- c("beta")
-omega_pars <- c("omega[1]","omega[2]")
-
-summary(bb_fit)$summary
-
-stan_plot(bb_fit3, pars=c("beta")) 
-
-#stan_plot(bb_fit, pars=p_pars) + 
-#  geom_point(aes(x=c(p_e1, p_e2, p_s1, p_s2), y=c(4,3,2,1)), color="blue", size=3)
-
-#stan_plot(bb_fit, pars=omega_pars) + 
-#  geom_point(aes(x=c(rho_1,rho_2), y=c(2,1)), color="blue", size=3)
-
-stan_trace(bb_fit3, pars=c("beta"))
-stan_trace(bb_fit3, pars=c("p_e"))
-stan_trace(bb_fit3, pars=c("p_s"))
-
-#stan_trace(bb_fit, pars=p_pars)
-#stan_trace(bb_fit, pars=omega_pars)
-
-# diagnostic
-posterior_bb_fit <- as.array(bb_fit)
-np_bb_fit <- nuts_params(bb_fit)
-lp_bb_fit <- log_posterior(bb_fit)
-rhats_bb_fit <- rhat(bb_fit)
-ratios_bb_fit <- neff_ratio(bb_fit)
-
-## NUTS diagnostics
-mcmc_parcoord(posterior_bb_fit, np = np_bb_fit)
-
-mcmc_pairs(posterior_bb_fit, np = np_bb_fit, pars = p_pars)
-mcmc_pairs(posterior_bb_fit, np = np_bb_fit, pars = beta_pars)
-
-mcmc_trace(posterior_bb_fit, np = np_bb_fit, pars = p_pars) +
-  xlab("Post-warmup iteration")
-mcmc_nuts_divergence(np_bb_fit, lp_bb_fit)
-mcmc_nuts_energy(np_bb_fit) # hists should look the same
-
-## general MCMC diagnostics
-# darker colors indicate worse convergence diagnostics
-mcmc_rhat(rhats_bb_fit) + yaxis_text(hjust = 1) 
-mcmc_neff(ratios_bb_fit, size = 2) + yaxis_text(hjust = 1)
-
-```
-
-
-
-### Compare Individual and copula models
+### Compare individual and copula models
 
 ```{r}
 #! make function that loops over all sim data
@@ -1069,7 +1022,7 @@ bb_3 <- summary(fit_bb_s, pars=c("p_s"))$summary
 
 as.tibble(bb_1) %>% mutate(mod="full")
 as.tibble(rbind(bb_2,bb_3)) 
-}
+
 
 library(broom)
 bb_1 <- tidy(fit_bb_jnt, pars=c("p_e", "p_s"), estimate.methd="median", conf.int = T, conf.method="HPDinterval") %>% mutate(mod="cop")
@@ -1079,7 +1032,7 @@ bb_2 <- tidy(fit_bb_e, pars=c("p_e"), estimate.methd="median", conf.int = T, con
 bb_3 <- tidy(fit_bb_s, pars=c("p_s"), estimate.methd="median", conf.int = T, conf.method="HPDinterval") %>% mutate(mod="sep")
 
 bb<-rbind(bb_1,bb_2,bb_3)
-
+}
 
 
 library(ggstance)
@@ -1121,162 +1074,6 @@ stan_plot(fit_bb_s, pars=c("p_s")) +
 }
 
 ```
-
-
-### Max Likelihood from Meester and MacKay
-
-Meester and MacKay [@meester_parametric_1994] present a different use of copulas. In this case, there is a single outcome of interest -- whether or not OME was cured -- and the copula is used to account for dependence between ears for an individual. The study randomized 62 children with unilateral OME and 44 children with bilateral OME to the cefaclor arm. In addition, 66 children with unilateral OME and 31 children with bilateral OME were randomized to the amoxicillin arm. Age was given in categories of $<2$ yr, $2-5$ yr, and $\ge$ 6 yr. A binary indicator of cure (yes/no) was recorded for each affected ear after 14 days of treatment. 
-
-The logistic regression model for each ear is: $\text{logit}[Pr(\text{ear cured}_i|\mathbf{X}_i=\mathbf{x}_i)]=\beta_0 + \beta_1x_{\text{amox},i} + \beta_2 x_{\text{age } 2-5,i} + \beta_3 x_{\text{age}\ge 6,i}=\mathbf{\beta'x_i}$ or equivalently $p_i = Pr(\text{ear cured}_i|\mathbf{x}_i)=\frac{1}{1+\exp(-\mathbf{\beta'x_i})}$. For the 128 children with unilateral OME, this completes the model specification. For the 75 children with bilateral OME, the dependence between the left and right ear was modeled using the same logistic regression for each margin and a Frank copula with the form $C_{\alpha}^{Frank}(u_1,u_2)=-\frac{1}{\alpha}\log\left(1+\frac{(\exp(-\alpha u_1)-1)(\exp(-\alpha u_2)-1)}{\exp(-\alpha)-1} \right),$ $(u_1,u_2) \in [0,1]^2,\, \alpha \in \mathbb{R}\ \backslash \{0\}$ to specify the joint distribution using equation \@ref(eq:eq2-1) in Sklar's theorem. The values $u_1$ and $u_2$ are pseudo-observations calculated using $F_{Y_i}(y_i)=u_i$ where $F_{Y_i}$ is the univariate Bernoulli df with parameter $p_i$ calculated from the logistic model. For the Frank copula, positive dependence increases as $\alpha \to \infty$ and negative dependence increases as $\alpha \to -\infty$; $\alpha=0$ represents independence. The complete log-likelihood is specified by adding the logistic regression model log-likelhoods from those with univariate data to the copula log-likelihoods from those with bivariate data. Because the copula marginal models and the individual logistic regression model are the same, the parameters of interest can be estimated consistently.
-
-
-```{r cl-a, eval=FALSE}
-## OME data
-load("OME_dat.RData")
- 
-# make bilateral data wide
-bi_dat_wide <- reshape(bi_dat,v.names="cured",direction="wide",
-                       idvar="id", timevar="ear")
-
-ome_dat<-rbind(uni_dat,bi_dat)
-ome_dat<-ome_dat[,c('id','entry','age','trt','cured')]
-
-# design matrices for unilateral and bilateral data
-Xmat1 <- model.matrix(~age+trt, data=uni_dat)
-Xmat2 <- model.matrix(~age+trt, data=bi_dat_wide)
-```
-
-
-```{r cl-b, cache=TRUE}
-## functions for OME application based on code from Hofert et al.
-
-##' @title Marginal conditional negative log-likelihood
-##' @param beta.m parameter vector defining the marginal calibration map
-##' @param y vector of values of one of the three scores
-##' @param x design matrix
-##' @param pobs logical indicating whether, additionally, the parametric
-##'        pseudo-observations shall be computed and returned
-##' @return -log-likelihood and, possibly, the parametric pseudo-observations
-nmLL <- function(beta.m, y, x, pobs = FALSE) {
-  
-    np <- ncol(x) # number of parameters
-    eta_i <- x %*% beta.m[1:np]
-    p_i <- plogis(eta_i)
-    nLL <- -sum(y*log(p_i) + (1-y)*log(1-p_i))
-    
-    if (!pobs) nLL else
-        list(nLL = nLL, U = pbinom(y, size=1, prob=p_i), 
-             U_prime = pbinom(y-1, size=1, prob=p_i))
-}
-
-##' @title Full conditional negative log-likelihood function
-##' @param par param. vector defining the marg. and copula calibration maps
-##' @param copula a bivariate one-parameter copula object
-##' @return -log-likelihood
-nfLL <- function(par, copula)
-{
-    beta <- par[1] # copula parameter
-    tc <- tryCatch(copula <- setTheta(copula, beta), # try to set parameters
-                   error = function(e) NULL)
-    if (is.null(tc)) return(-Inf) # in case of failure, return -Inf
-   
-    beta.m <- par[2:5] #marginal model parameters
-    
-    #unilateral data log-likelihood
-    nmLL.1 <- nmLL(beta.m, uni_dat[,"cured"], Xmat1)
-    
-    ## Marginal log-likelihood eval for bilateral data and computing the
-    ## corresponding parametric pseudo-observations
-    nmLL.2 <- nmLL(beta.m, bi_dat_wide[,"cured.1"], Xmat2, pobs = TRUE)
-    nmLL.3 <- nmLL(beta.m, bi_dat_wide[,"cured.2"], Xmat2, pobs = TRUE)
-    
-    ## In case of invalid evaluation of the likelihoods, return -Inf
-    if (any(is.na(c(nmLL.1, nmLL.2$nLL, nmLL.3$nLL)))) return(-Inf)
-   
-    ## Parametric pseudo-observations
-    U2<-nmLL.2$U
-    U2_prime<-nmLL.2$U_prime
-    U3<-nmLL.3$U
-    U3_prime<-nmLL.3$U_prime
-    
-    ## -log-likelihood for joint dist. using differences
-    cP <- pCopula(cbind(U2,U3), copula=copula) - 
-    pCopula(cbind(U2_prime,U3), copula=copula) -
-    pCopula(cbind(U2,U3_prime), copula=copula) +
-    pCopula(cbind(U2_prime,U3_prime), copula=copula)
-
-    cl <- -sum( log(cP) )
-    
-    # complete -log-likelihood with unilateral and bilateral data contributions
-    cl + nmLL.1 
-}
-
-# initialize marginal parameters at glm est. assuming independence
-fit_init<-glm(cured~age+trt, dat=ome_dat, family="binomial")
-
-# initialize copula parameter by estimating unadjusted spearman's rho
-rho <- cor(bi_dat_wide$cured.1, bi_dat_wide$cured.2, method = "spearman")
-
-# function to get alpha estimate for initialization
-alp_fun <-function(alpha, r) {
-  (1-alpha*exp(-alpha/2)-exp(-alpha))*(exp(-alpha/2)-1)^(-2) - r
-}
-
-alp_init <- uniroot(alp_fun,c(-10,10), tol = 0.0001, r=rho)$root
-
-init_vals <- c(alp_init, coef(fit_init)[1:4])
-
-# get MLE for copula model using optim
-cl_fit<-optim(init_vals, nfLL, copula=frankCopula(dim=2), 
-              method = "Nelder-Mead", hessian=TRUE)
-cov_cl_fit <- solve(cl_fit$hessian)
-se_cl_fit <- sqrt(diag(cov_cl_fit))
-
-# compare to fit under independence assumption
-cl_fit2<-optim(c(0,init_vals[2:5]), nfLL, copula=indepCopula(dim=2), 
-               method = "Nelder-Mead", hessian=TRUE)
-cov_cl_fit2 <- solve(cl_fit2$hessian[2:5,2:5])
-se_cl_fit2 <- sqrt(diag(cov_cl_fit2))
-
-if (0){
-round(2*5+2*cl_fit[['value']],2) # Frank copula model AIC = 2p - 2 log-likelihood 
-round(2*4+2*cl_fit2[['value']],2) # Ind model AIC = 2p - 2 log-likelihood 
-alp_fun(cl_fit[['par']][[1]],0) # est of spearman's rho 
-}
-```
-
-The maximum likelihood estimates and standard errors were calculated using the `optim` function with the default 'Nelder-Mead' algorithm to minimize the negative log-likelihood. Table `r if (knitr::is_html_output()) '\\@ref(tab:cl-tab-html)' else '\\@ref(tab:cl-tab)'` shows parameter estimates, standard errors and odds ratios for the regression parameters. 
-
-The copula parameter estimate is `r round(cl_fit[['par']][[1]],3)` (equivalent to Spearman's $\rho=$ `r round(alp_fun(cl_fit[['par']][[1]],0),3)`) which represents strong dependence within individuals. The regression coefficients show that both age and treatment have a significant effect. Older children have significantly higher odds of cure compared to those $<2$ yr after adjusting for treatment group (OR and $95\%$ confidence intervals; age 2-5 yr $_{2.24}5.007_{11.21}$; age $\ge$ 6 yr $_{1.65}3.21_{6.25}$). Those treated with amoxicillin had a significantly lower odds of cure compared to cefaclor (OR and $95\%$ confidence interval; $_{0.26}0.454_{0.80}$).
-
-Meester and MacKay produce similar results using a GEE model for the correlation within individuals, but note that because GEE is a quasi-likelihood method, it cannot be used if a full likelihood is required. For example, different parametric copula models can be compared using AIC. In this example, the AIC for the fitted Frank copula model is `r round(2*5+2*cl_fit[['value']],2)` while a model using an independence copula (which has no copula parameter to estimate) has AIC of `r round(2*4+2*cl_fit2[['value']],2)` indicating that the Frank model provides a better fit. 
-
-```{r cl-tab0, cache=TRUE}
-cl_est <- cl_fit$par
-
-cl_tab <- data.frame(Est=round(cl_est,3), SE=round(se_cl_fit,3), OR = c("", paste0(
-       round(exp(cl_est[2:5]),3), " (",
-       round(exp(cl_est[2:5]+qnorm(0.025)*se_cl_fit[2:5]),2),", ", 
-       round(exp(cl_est[2:5]-qnorm(0.025)*se_cl_fit[2:5]),2), ")"))
-  )
-
-rownames(cl_tab)<-c("$\\alpha$","(intercept)","Age $\\ge$ 6 yr (ref. $<$2 yr)","Age 2-5 yr (ref. $<$2 yr)","Amoxicillin (ref. Cefaclor)")
-```
-
-```{r cl-tab, cache=TRUE, eval=knitr::is_latex_output(), echo=FALSE, results='asis'}
-kable(cl_tab, "latex", booktabs = TRUE, escape=FALSE, 
-      caption = 'OME Model Estimates',
-      col.names = c("Estimate", "SE Estimate", "OR ($95\\%$ CI)"))
-```
-
-```{r cl-tab-html, cache=TRUE, eval=knitr::is_html_output(), echo=FALSE}
-kable(cl_tab, "html", booktabs = TRUE, escape=FALSE, 
-      caption = 'OME Model Estimates',
-      col.names = c("Estimate", "SE Estimate", "OR (95\\% CI)"))
-```
-
-
-
 
 ## Continuous - Continuous
 
@@ -1350,7 +1147,7 @@ dat_lab %<>% mutate(treatment=factor(treatment, labels=c("placebo","active")),
                    safety=factor(safety, labels=c("no AE","AE")))
 ```
 
-The histograms of efficacy by treatment and AE status for the simulated data in Figure \@ref(fig:br-b) confirm that the highest efficacy was observed for those in the active treatment group with an adverse event.
+The histograms of efficacy by treatment and AE status for the simulated data in the Figure confirm that the highest efficacy was observed for those in the active treatment group with an adverse event.
 
 ```{r br-b, cache=TRUE, fig.cap='Simulated data from Costa and Drury Benefit-Risk Example', fig.show = 'hold', fig.align='center', out.width='95%'}
 ggplot(dat_lab, aes(x=efficacy, fill=treatment)) + 
@@ -1419,7 +1216,7 @@ generated quantities {
 ```
 
 
-```{r br-d0, cache=TRUE}
+```{r br-d, cache=TRUE}
 # joint model w/o using cop function
 mod_code <- "
 data {
@@ -1494,8 +1291,8 @@ generated quantities {
 "
 ```
 
-try to use coded log-likelihood function rather than hardcoding
-```{r br-d, cache=TRUE}
+use coded log-likelihood function rather than hardcoding
+```{r br-d2, cache=TRUE}
 # joint model
 mod_code2 <- "
 functions {
@@ -1625,7 +1422,7 @@ br_fit2 <- stan(model_code = mod_code2, data=mod_data, seed=3578935,
 ```
 
 
-Table `r if (knitr::is_html_output()) '\\@ref(tab:br-tab-html)' else '\\@ref(tab:br-tab)'` summarizes the mean, Monte Carlo standard error, standard deviation, and quantiles of the posterior distributions for parameters $\mu_t$, $p_t$, $\rho_t$, and $\theta_t$ from the normal copula model. The number of effective samples -- a function of the correlation between sample draws -- along with Rhat -- a measure of MCMC convergence -- are also shown. The model performs reasonable well with posterior median estimates close to the true values for all parameters except the correlation between outcomes $\rho_1$ and adverse event rate $p_1$ in the placebo group.
+Table below summarizes the mean, Monte Carlo standard error, standard deviation, and quantiles of the posterior distributions for parameters $\mu_t$, $p_t$, $\rho_t$, and $\theta_t$ from the normal copula model. The number of effective samples -- a function of the correlation between sample draws -- along with Rhat -- a measure of MCMC convergence -- are also shown. The model performs reasonable well with posterior median estimates close to the true values for all parameters except the correlation between outcomes $\rho_1$ and adverse event rate $p_1$ in the placebo group.
 
 ```{r br-tab0, cache=TRUE}
 br_tab <- round(summary(br_fit, pars=c("mu","p","rho","theta"))$summary,2) 
