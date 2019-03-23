@@ -1,0 +1,729 @@
+---
+title: "Operating Characteristics of Bayesian Joint Benefit-Risk Copula Models plots"
+author: "Nathan T. James"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+#For code block want echo=TRUE if (knitr::is_html_output())
+# echo=FALSE otherwise (e.g. echo = FALSE if (knitr::is_latex_output()))
+knitr::opts_chunk$set(echo = knitr::is_html_output())
+wdir<-file.path("/home/nathan/Dropbox/njames/school/PhD/misc/conferences/ENAR2019/code")
+
+# load packages
+libs<-c("copula", "knitr", "magrittr", "ggplot2", "rstan", "plotly", "bayesplot", "ggExtra", "polycor", "ggstance", "cowplot")
+
+invisible(lapply(libs, library, character.only = TRUE))
+```
+
+```{r funs}
+# helper function
+rowDiff <- function(mat){
+  mat[,1] <- mat[,1]*-1
+  return(rowSums(mat))
+}
+
+# function to get credible interval from samples
+ci_bb_sim <- function(s_id, qtile = c(0.05,0.5,0.95) ){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  
+  #! order matters here because of labels
+  diffs <- c("p_e_i_diff", "p_e_j_diff", "p_s_i_diff", "p_s_j_diff")
+  diffs_ci <- lapply(diffs, function(x) quantile(get(x), qtile))
+  diffs_ci_vec <- unlist(diffs_ci) 
+  names(diffs_ci_vec) <- paste0(sort(rep(diffs,length(qtile))),"_q",qtile)
+  
+  return( c(s_id=s_id, diffs_ci_vec) )
+}
+
+# function to reshape combined output of ci_bb_sim
+reshaper1 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("p","outcome","mod","diff","qtile"))
+mlt1 <- cbind(mlt0,vars0)
+return(reshape2::dcast(mlt1, s_id+outcome+mod~qtile))
+}
+
+
+# function to get posterior probabilities of marginal events
+pp_bb_sim <- function(s_id, grd = seq(0,1,by=0.01) ){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  pp_e_i_gt <- sapply(grd,function(g) mean(p_e_i_diff > g)) # posterior prob efficacy diff greater than g
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  pp_s_i_gt <- sapply(grd,function(g) mean(p_s_i_diff > g))
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  pp_e_j_gt <- sapply(grd,function(g) mean(p_e_j_diff > g))
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  pp_s_j_gt <- sapply(grd,function(g) mean(p_s_j_diff > g))
+
+  #! order matters here because of labels
+  postps <- c("pp_e_i_gt", "pp_e_j_gt", "pp_s_i_gt", "pp_s_j_gt")
+  postps_ls <- lapply(postps, function(x) get(x))
+  postps_vec <- unlist(postps_ls) 
+  
+  names(postps_vec) <- paste0(sort(rep(postps,length(grd))),"_g_",grd)
+  
+  c(s_id=s_id,postps_vec)
+}
+
+# function to reshape combined output of pp_bb_sim
+reshaper2 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","outcome","mod","foo","bar","g"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","outcome","mod","g","pp_gt_g")])
+}
+
+
+
+# function to get posterior probabilities of joint outcome
+pp_jnt_bb_sim <- function(s_id, grd = seq(0,1,by=0.01) ){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  
+  pp_jnt_i_gt <- sapply(grd,function(g) mean(p_e_i_diff > g & p_s_i_diff > g)) 
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  
+  pp_jnt_j_gt <- sapply(grd,function(g) mean(p_s_j_diff > g & p_e_j_diff > g))
+
+  
+  #! order matters here because of labels
+  postps <- c("pp_jnt_i_gt", "pp_jnt_j_gt")
+  postps_ls <- lapply(postps , function(x) get(x))
+  postps_vec <- unlist(postps_ls) 
+  
+  names(postps_vec) <- paste0(sort(rep(postps, length(grd))),"_g_",grd)
+  
+  c(s_id=s_id,postps_vec)
+}
+
+# function to reshape combined output of pp_jnt_bb_sim
+reshaper3 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","jnt","mod","foo","bar","g"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","jnt","mod","g","pp_gt_g")])
+}
+
+
+# function to get correlation posterior eff risk diff and safety risk diff
+corr_bb_sim <- function(s_id){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  
+  corr_i <- cor(p_e_i_diff, p_s_i_diff) 
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  
+  corr_j <- cor(p_e_j_diff, p_s_j_diff) 
+  
+  c(s_id=s_id,corr_ind = corr_i,corr_jnt=corr_j)
+}
+
+
+# function to reshape combined output of pp_jnt_bb_sim
+reshaper4 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="corr")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("corr","mod"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","mod","corr")])
+}
+
+# function to batch read-in and processing of data
+# batches are deleted after loading
+doBatch <- function(ntotal, batchsize){
+  batches<-ntotal/batchsize
+  
+  # get batch sequence
+  ss0<-c(seq(1,ntotal,by=batchsize),ntotal-1)
+  ss2 <- ss0[-1]+1
+  ss1 <- rev(rev(ss0)[-1])
+  fn<-c(ss1[1], rev(rev(ss2)[-1]))
+  sn<-c(ss1[-1], rev(ss2)[1])
+  
+  for (i in 1:batches){
+    
+    for (s_id in fn[i]:sn[i]){
+      load(file.path(wdir,"sims","bb",paste0("bb_sim_",s_id,".RData")), .GlobalEnv)
+    }
+    
+    # ci_bb_sim for batch - credible intervals
+    assign(paste0("bb_ci_dat0_",i),
+             data.frame(do.call(rbind, lapply(fn[i]:sn[i], ci_bb_sim))),
+             envir=.GlobalEnv)
+    
+    # pp_bb_sim for batch - posterior prob gt grid
+    assign(paste0("bb_pp_dat0_",i),
+             data.frame(do.call(rbind, lapply(fn[i]:sn[i], pp_bb_sim))),
+             envir=.GlobalEnv)
+    
+    # pp_jnt_bb_sim for batch - posterior prob gt grid
+    assign(paste0("bb_pp_jnt_dat0_",i),
+             data.frame(do.call(rbind, lapply(fn[i]:sn[i], pp_jnt_bb_sim))),
+             envir=.GlobalEnv)
+    
+    assign(paste0("corr_dat0_",i),
+           data.frame(do.call(rbind, lapply(fn[i]:sn[i], corr_bb_sim))),
+           envir=.GlobalEnv)
+    
+    
+    # remove loaded datasets, samples, summaries and sim params for batch
+    rm(list=ls(envir=.GlobalEnv)[grep("dat_bb_|samp_bb_|summ_bb_|sim_params_",
+                                      ls(envir=.GlobalEnv))], envir=.GlobalEnv)
+  }
+  
+}
+
+
+```
+
+make function looking at correlation between p_e[2]- p_e[1] and p_s[2] - p_s[1]
+```{r, eval=FALSE}
+
+# old code to make corr_bb_sim
+for (i in 1:5){
+  load(file.path(wdir,"sims","bb",paste0("bb_sim_",i,".RData")))
+}
+
+# function to get correlation posterior eff risk diff and safety risk diff
+corr_bb_sim <- function(s_id){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  
+  corr_i <- cor(p_e_i_diff, p_s_i_diff) 
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  
+  corr_j <- cor(p_e_j_diff, p_s_j_diff) 
+  
+  c(s_id=s_id,corr_ind = corr_i,corr_jnt=corr_j)
+}
+
+corr_bb_sim(1)
+corr_bb_sim(2)
+corr_bb_sim(3)
+corr_bb_sim(4)
+
+
+corr_dat0<- data.frame(do.call(rbind, lapply(1:5, corr_bb_sim)))
+
+ds<-corr_dat0
+
+
+# function to reshape combined output of pp_jnt_bb_sim
+reshaper4 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="corr")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("corr","mod"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","mod","corr")])
+}
+
+merge(bb_sim_array_ord_run, corr_dat0, by.x="sim_id",by.y="s_id")
+
+
+
+
+
+
+# old code to make pp_jnt_bb_sim
+for (i in 1:5){
+  load(file.path(wdir,"sims","bb",paste0("bb_sim_",i,".RData")))
+}
+
+# function to get posterior probabilities of joint outcome
+pp_jnt_bb_sim <- function(s_id, grd = seq(0,1,by=0.01) ){
+  
+  # ind efficacy
+  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
+  
+  # ind safety
+  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
+  
+  pp_jnt_i_gt <- sapply(grd,function(g) mean(p_e_i_diff > g & p_s_i_diff > g)) 
+  
+  # joint mod
+  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
+  
+  # joint mod efficacy
+  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
+  
+  # joint mod safety
+  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
+  
+  pp_jnt_j_gt <- sapply(grd,function(g) mean(p_s_j_diff > g & p_e_j_diff > g))
+
+  
+  #! order matters here because of labels
+  postps <- c("pp_jnt_i_gt", "pp_jnt_j_gt")
+  postps_ls <- lapply(postps , function(x) get(x))
+  postps_vec <- unlist(postps_ls) 
+  
+  names(postps_vec) <- paste0(sort(rep(postps, length(grd))),"_g_",grd)
+  
+  c(s_id=s_id,postps_vec)
+}
+
+ds<-pp_jnt_bb_sim(1)
+
+bb_pp_jnt_dat0<- data.frame(do.call(rbind, lapply(1:5, pp_jnt_bb_sim)))
+
+ds <- bb_pp_jnt_dat0
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","jnt","mod","foo","bar","g"))
+mlt1 <- cbind(mlt0,vars0)
+
+# function to reshape combined output of pp_bb_sim
+reshaper3 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","jnt","mod","foo","bar","g"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","jnt","mod","g","pp_gt_g")])
+}
+
+reshaper3(ds)
+
+```
+
+
+```{r preprocess}
+# read in array with sim params
+bb_sim_array <- readRDS(file.path(wdir,"bb_sim_array.rds"))
+bb_sim_array_ord<-bb_sim_array[order(bb_sim_array$n,bb_sim_array$rho_2,bb_sim_array$p_e2,bb_sim_array$p_s2,bb_sim_array$rep_id),]
+
+nreps<-100
+nscn<-nrow(bb_sim_array)/nreps
+sc_id<-sort(rep(1:nscn,nreps))
+bb_sim_array_ord$scn_id <- sc_id
+
+# keep only ones where sim has been run
+nsims<-2000
+bb_sim_array_ord_run <- subset(bb_sim_array_ord, sim_id<=nsims)
+rm(bb_sim_array, bb_sim_array_ord, nreps, nscn, sc_id)
+
+# placebo group
+p_e1 <- 0.2 # prob effective
+p_s1 <- 0.1 # prob AE
+rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
+```
+
+```{r batch_process}
+# load and process sims in batches
+bsize<-200
+
+#doBatch(100, 20)
+
+doBatch(nsims, bsize)
+
+bb_ci_vec<-ls()[grep("bb_ci_dat0_",ls())]
+bb_ci_lst<-sapply(bb_ci_vec, get,simplify = FALSE)
+bb_ci_dat0<-do.call(rbind,bb_ci_lst)
+rm(list=bb_ci_vec)
+rm(bb_ci_lst,bb_ci_vec)
+
+bb_ci_dat1 <- reshaper1(bb_ci_dat0)
+bb_ci_dat<-merge(bb_sim_array_ord_run, bb_ci_dat1, by.x="sim_id",by.y="s_id")
+rm(bb_ci_dat0,bb_ci_dat1)
+
+
+bb_pp_vec<-ls()[grep("bb_pp_dat0_",ls())]
+bb_pp_lst<-sapply(bb_pp_vec, get,simplify = FALSE)
+bb_pp_dat0<-do.call(rbind,bb_pp_lst)
+rm(list=bb_pp_vec)
+rm(bb_pp_lst,bb_pp_vec)
+
+bb_pp_dat1 <- reshaper2(bb_pp_dat0)
+bb_pp_dat<-merge(bb_sim_array_ord_run, bb_pp_dat1, by.x="sim_id",by.y="s_id")
+rm(bb_pp_dat0,bb_pp_dat1)
+
+
+bb_pp_jnt_vec<-ls()[grep("bb_pp_jnt_dat0_",ls())]
+bb_pp_jnt_lst<-sapply(bb_pp_jnt_vec, get,simplify = FALSE)
+bb_pp_jnt_dat0<-do.call(rbind,bb_pp_jnt_lst)
+rm(list=bb_pp_jnt_vec)
+rm(bb_pp_jnt_lst,bb_pp_jnt_vec)
+
+bb_pp_jnt_dat1 <- reshaper3(bb_pp_jnt_dat0)
+bb_pp_jnt_dat<-merge(bb_sim_array_ord_run, bb_pp_jnt_dat1, by.x="sim_id",by.y="s_id")
+rm(bb_pp_jnt_dat0,bb_pp_jnt_dat1)
+
+corr_vec<-ls()[grep("corr_dat0_",ls())]
+corr_lst<-sapply(corr_vec, get,simplify = FALSE)
+corr_dat0<-do.call(rbind,corr_lst)
+rm(list=corr_vec)
+rm(corr_lst,corr_vec)
+
+corr_dat1 <- reshaper4(corr_dat0)
+corr_dat<-merge(bb_sim_array_ord_run, corr_dat1, by.x="sim_id",by.y="s_id")
+rm(corr_dat0,corr_dat1)
+```
+
+## plots of credible intervals
+```{r bb-ci-plt}
+
+# better labels for risk differences, models, outcome
+bb_ci_dat %<>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")),
+                      outcome = factor(outcome, c("e","s"), c("efficacy","safety")))
+
+if (0){
+#too much!
+ggplot(data=bb_ci_dat, aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2)) + facet_grid(n~rho_2+p_e2+p_s2)
+
+ggplot(data=bb_ci_dat,aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) + 
+  geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
+  geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.4) + facet_grid(n~rho_2+p_e2+p_s2)
+
+# better
+ggplot(data=subset(bb_ci_dat,rho_2==0.35), aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2)) + facet_grid(n~p_e2+p_s2)
+
+ggplot(data=subset(bb_ci_dat,rho_2==0.35),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
+  geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.4) + facet_grid(n~p_e2+p_s2)
+}
+
+# these might be better using diffs credible interval width
+if (1){
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==50),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+#    geom_point(aes(shape=mod), size=3, position=position_dodgev(height=0.4), alpha=0.5) +
+    geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.2) + 
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+#  geom_point(aes(shape=model), position=position_dodgev(height=0.4), alpha=0.1) +
+  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.25) +
+  facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==200),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+#  geom_point(aes(shape=model), position=position_dodgev(height=0.4), alpha=0.1) +
+  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.25) +
+  facet_grid(delta_e~delta_s,labeller = "label_both")
+
+# with 400 really tight
+
+}
+
+if (1){
+  png("bb_ci_r01_n100.png",width=720,height=720)
+  ggplot(data=subset(bb_ci_dat,rho_2==0.1 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+    geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) +
+    geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+  dev.off()
+  
+  png("bb_ci_r035_n100.png",width=720,height=720)
+  ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+    geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) +
+    geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+  dev.off()
+  
+  png("bb_ci_r06_n100.png",width=720,height=720)
+    ggplot(data=subset(bb_ci_dat,rho_2==0.6 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+      geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) + 
+      geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
+      facet_grid(delta_e~delta_s,labeller = "label_both")
+    dev.off()
+  }
+
+bb_ci_dat
+```
+
+
+```{r, eval=FALSE}
+# test with single scenerio
+subset(bb_ci_dat,scn_id==72)
+
+ggplot(data=subset(bb_ci_dat,scn_id==72), aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2))
+
+ggplot(data=subset(bb_ci_dat,scn_id==72),
+       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) + 
+ #  geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
+  geom_linerangeh(position=position_dodgev(height=0.4), size=3, alpha=0.2) 
+
+```
+
+
+## plots of ind posterior prob greater than g
+```{r bb-pp-plt}
+
+bb_pp_dat_srt<-bb_pp_dat %>% arrange(rep_id,outcome,mod,g)
+#ss<-subset(bb_pp_dat,scn_id==72)
+#table(ss$mod,ss$outcome,ss$rep_id)
+
+if (0){
+ggplot(data=subset(bb_pp_dat_srt,scn_id==72 & rep_id==99), 
+       aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
+
+ggplot(data=subset(bb_pp_dat,scn_id==72 & rep_id==97), 
+       aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
+
+ggplot(data=subset(bb_pp_dat,scn_id==72), aes(x=g, y=pp_gt_g, group=rep_id)) + geom_line(alpha=0.5) + facet_grid(mod~outcome)
+
+ggplot(data=subset(bb_pp_dat,scn_id==72), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(outcome~.)
+}
+
+
+ggplot(data=subset(bb_pp_dat,scn_id==3 & rep_id==37), 
+       aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
+
+png("bb_pp_scn3_r5.png",width=720,height=720)
+ggplot(data=subset(bb_pp_dat,scn_id==3 & rep_id==5), 
+       aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
+dev.off()
+
+ggplot(data=subset(bb_pp_dat,scn_id==3), aes(x=g, y=pp_gt_g, group=rep_id)) + geom_line(alpha=0.5) + facet_grid(mod~outcome)
+
+# 
+png("bb_pp_scn3.png",width=720,height=720)
+ggplot(data=subset(bb_pp_dat,scn_id==3), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(.~outcome)
+dev.off()
+
+
+ggplot(data=subset(bb_pp_dat,scn_id==3), 
+       aes(x=g, y=pp_gt_g, 
+           group=interaction(mod,rep_id),
+           linetype=interaction(outcome,rep_id))) + 
+  geom_line(aes(color=mod))
+
+
+
+g1<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="e"), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+g2<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="s"), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+plot_grid(g1,g2)
+
+
+
+g3<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==200 & mod=="i"), 
+       aes(x=g, y=pp_gt_g, color=outcome, group=interaction(outcome,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both") + theme(legend.position = "none", axis.text.x= element_text(size=10))
+
+g4<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==200 & mod=="j"), 
+       aes(x=g, y=pp_gt_g, color=outcome, group=interaction(outcome,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both") + theme(axis.text.x= element_text(size=10))
+
+g5<-plot_grid(g3,g4,labels=c("ind models","copula model"), rel_widths=c(1,1.4), scale=0.85,label_size=11, label_x=0.4)  
+
+# now add the title
+title <- ggdraw() + 
+  draw_label("posterior prob. of (eff>g) and posterior prob. of (safety>g)",
+             fontface = 'bold')
+g6<-plot_grid(title, g5, ncol = 1, rel_heights = c(0.1, 1)) 
+
+
+save_plot("bb_pp_r035_n200.png",g6,base_height=5,base_width=10)
+
+ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50), aes(x=g, y=pp_gt_g, group=rep_id)) + geom_line(aes(col=mod)) + facet_grid(outcome+p_e2~p_s2,labeller = "label_both")
+
+
+
+
+```
+
+
+## plots of joint posterior prob greater than g
+```{r bb-pp-jnt-plt}
+
+
+# 
+ggplot(data=subset(bb_pp_jnt_dat,scn_id==72), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) 
+
+ggplot(data=subset(bb_pp_jnt_dat,scn_id==1), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.5) 
+
+
+p1<-ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.1 & n==100), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+
+p2<-ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.35 & n==100), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + ggtitle("joint posterior prob. of (eff>g and safety>g) for ind vs. copula models")
+png("bb_pp_jnt_r035_n100.png",width=720,height=720)
+p2
+dev.off()
+
+p3<-ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.6 & n==100), 
+       aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+# get difference in posterior prob of being greater than g for eff and safety
+sub1<-subset(bb_pp_jnt_dat,mod=="i")
+sub2<-subset(bb_pp_jnt_dat,mod=="j")
+
+sub1 %<>% rename(pp_gt_g_i=pp_gt_g)
+sub2 %<>% rename(pp_gt_g_j=pp_gt_g)
+
+
+#merge on sim_id and g
+
+bb_pp_jnt_dat2<-merge(sub1,sub2,by=c("sim_id","g","n","rho_2","p_e2","p_s2","rep_id","scn_id")) %>% select(sim_id,g,n,rho_2,p_e2,p_s2,rep_id,scn_id,g,pp_gt_g_i,pp_gt_g_j) %>% mutate(pp_gt_g_diff=pp_gt_g_i-pp_gt_g_j)
+
+p4<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.1 & n==100), 
+       aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+
+p5<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.35 & n==100), 
+       aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + ggtitle("difference in joint posterior prob of (eff>g and safety>g) for ind vs. copula models")
+
+# difference is ind mod - copula model, so >0 means ind model has higher post. prob of being > g
+png("bb_pp_jnt_diff_r035_n100.png",width=720,height=720)
+p5
+dev.off()
+
+
+p6<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.6 & n==100), 
+       aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+
+```
+
+
+## plots of corr
+```{r bb-corr-plt}
+
+ggplot(data=subset(corr_dat,scn_id==72), aes(x=corr, fill=mod)) + geom_density()
+
+
+
+
+ggplot(data=subset(corr_dat,rho_2==0.35 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(p_e2~p_s2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, y=mod)) +  geom_violinh(alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+if (0){
+ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+}
+
+
+if (1){
+
+pl1 <- ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+    geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl2 <-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl3 <-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl4 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl5 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl6 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl7 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl8 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+
+pl9 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.7& n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+}
+
+
+png("bb_corr_pe2_02_p_s2_01_n100.png",width=720,height=720)
+pl1
+dev.off()  
+  
+
+png("bb_corr_pe2_05_p_s2_04_n100.png",width=720,height=720)
+pl5
+dev.off()
+
+```
