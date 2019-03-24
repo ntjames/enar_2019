@@ -233,12 +233,7 @@ bb_sim_files_num <- as.numeric(do.call(rbind,strsplit(bb_sim_files_num0,".R"))[,
 bb_sim_array_ord_run <- subset(bb_sim_array_ord, sim_id %in% bb_sim_files_num)
 rm(bb_sim_array, bb_sim_array_ord, bb_sim_files_num0, nreps, nscn, sc_id)
 
-if (0){
-# placebo group
-p_e1 <- 0.2 # prob effective
-p_s1 <- 0.1 # prob AE
-rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
-}
+
 ```
 
 ```{r batch_process}
@@ -283,6 +278,11 @@ rm(bb_corr_dat0, bb_corr_vec)
 
 ```{r bb-ci-plt}
 
+# placebo group vals
+p_e1 <- 0.2 # prob effective
+p_s1 <- 0.1 # prob AE
+rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
+
 # better labels for risk differences, models, outcome
 bb_ci_dat %<>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
                       model = factor(mod,c("i","j"), c("independent","copula")),
@@ -304,50 +304,153 @@ ggplot(data=subset(bb_ci_dat,rho_2==0.35),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=
 }
 
 # these might be better using diffs credible interval width
-if (1){
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==50),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+if (0){
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==50),
+       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
 #    geom_point(aes(shape=mod), size=3, position=position_dodgev(height=0.4), alpha=0.5) +
-    geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.2) + 
+    geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) + 
     facet_grid(delta_e~delta_s,labeller = "label_both")
 
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
-#  geom_point(aes(shape=model), position=position_dodgev(height=0.4), alpha=0.1) +
-  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.25) +
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),
+       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
   facet_grid(delta_e~delta_s,labeller = "label_both")
 
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==200),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
-#  geom_point(aes(shape=model), position=position_dodgev(height=0.4), alpha=0.1) +
-  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.25) +
+ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==200),
+       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
   facet_grid(delta_e~delta_s,labeller = "label_both")
 
 # with 400 really tight
 
 }
 
-if (1){
-  png("bb_ci_r01_n100.png",width=720,height=720)
-  ggplot(data=subset(bb_ci_dat,rho_2==0.1 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
-    geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) +
-    geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
-    facet_grid(delta_e~delta_s,labeller = "label_both")
-  dev.off()
-  
-  png("bb_ci_r035_n100.png",width=720,height=720)
-  ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
-    geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) +
-    geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
-    facet_grid(delta_e~delta_s,labeller = "label_both")
-  dev.off()
-  
-  png("bb_ci_r06_n100.png",width=720,height=720)
-    ggplot(data=subset(bb_ci_dat,rho_2==0.6 & n==100),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
-      geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.1) + 
-      geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.25) +
-      facet_grid(delta_e~delta_s,labeller = "label_both")
-    dev.off()
-  }
 
-bb_ci_dat
+bb_ci_n100_1 <- ggplot(data=subset(bb_ci_dat, rho_2==0.1 & n==100),
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both")
+
+# + theme(legend.position = "none", axis.text.x= element_text(size=10))
+
+bb_ci_n100_2 <- ggplot(data=subset(bb_ci_dat, rho_2==0.35 & n==100), 
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both")
+
+bb_ci_n100_3 <- ggplot(data=subset(bb_ci_dat, rho_2==0.6 & n==100), 
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both")
+
+
+bb_ci_n100 <- plot_grid(bb_ci_n100_1, bb_ci_n100_2, bb_ci_n100_3,
+                      labels=c("rho_2=0.1","rho_2=0.35","rho_2=0.6"), 
+                      rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
+
+bb_ci_n100
+```
+
+```{r}
+bb_ci_dat_summ <- bb_ci_dat %>% 
+  select(-c(dat_seed, samp_seed, mod)) %>% 
+  arrange(scn_id,rep_id) %>% 
+  mutate(ci_width = q0.95 - q0.05) %>%
+  group_by(scn_id, outcome, model) %>%
+  summarise(mean_ci_width = mean(ci_width), n=mean(n), rho_2=mean(rho_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+
+bb_ci_dat_summ2 <- bb_ci_dat_summ %>% mutate(delta_e=factor(delta_e,c(0,0.3,0.6), c("delta[e]==0","delta[e]==0.3","delta[e]==0.6")),
+      delta_s=factor(delta_s,c(0,0.3,0.6), c("delta[s]==0","delta[s]==0.3","delta[s]==0.6")))    
+
+bb_ci_dat_summ2
+
+if(0){
+ggplot(data=subset(bb_ci_dat_summ,rho_2==0.1 & n==400),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(shape=model), size=2, position=position_dodgev(height=0.4), alpha=0.75) +
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+  
+ggplot(data=subset(bb_ci_dat_summ,rho_2==0.35 & n==400),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(shape=model), size=2, position=position_dodgev(height=0.4), alpha=0.75) +
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_ci_dat_summ,rho_2==0.6 & n==400),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(shape=model), size=2, position=position_dodgev(height=0.4), alpha=0.75) +
+    facet_grid(delta_e~delta_s,labeller = "label_both")
+}
+
+if (0){
+bb_ciw_r01 <- ggplot(data=subset(bb_ci_dat_summ,rho_2==0.1),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s,labeller = "label_both") 
+#+ theme(legend.position = "none")
+  
+bb_ciw_r035 <- ggplot(data=subset(bb_ci_dat_summ,rho_2==0.35 ),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s,labeller = "label_both") 
+
+bb_ciw_r06 <-ggplot(data=subset(bb_ci_dat_summ, rho_2==0.6),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed")
+
+
+bb_ciw <- plot_grid(bb_ciw_r01, bb_ciw_r035, bb_ciw_r06, ncol=3,
+                      labels=c("rho_2=0.1","rho_2=0.35","rho_2=0.6"), 
+                      rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
+}
+
+bb_ciw_r01 <-ggplot(data=subset(bb_ci_dat_summ2, rho_2==0.1),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+   labs(x="mean width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+
+bb_ciw_r035 <-ggplot(data=subset(bb_ci_dat_summ2, rho_2==0.35),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+   labs(x="mean width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+   
+bb_ciw_r06 <-ggplot(data=subset(bb_ci_dat_summ2, rho_2==0.6),
+       aes(x=mean_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+   labs(x="mean width of 90% posterior credible interval")
+
+# plot shows average 90% quantile posterior credible interval widths for independent and copula models across a range of true efficacy and safety risk differences and sample sizes
+
+bb_ciwidths_sub_plt <- plot_grid(bb_ciw_r01, bb_ciw_r035, bb_ciw_r06, ncol=3,
+                      labels= paste("rho_t =",c(0.1,0.35,0.6)) , 
+                      rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
+  
+
+```
+
+```{r}
+bb_ci_dat_s <- bb_ci_dat %>% 
+  select(-c(dat_seed, samp_seed, mod, p_e2, p_s2)) %>% 
+  arrange(scn_id,rep_id) %>% 
+  mutate(ci_width = q0.95 - q0.05) %>%
+  group_by(n, rho_2, outcome, model) %>%
+  summarise(mean_ci_width = mean(ci_width))
+
+bb_ci_dat_s2 <- bb_ci_dat_s %>% ungroup() %>% mutate(rho_2=factor(rho_2,c(0.1,0.35,0.6),c("rho[t]==0.1","rho[t]==0.35","rho[t]==0.6")))      
+# plot shows average 90% quantile posterior credible interval widths for independent and copula models across a range of treatment group outcome correlations and sample sizes
+bb_ciwidths_plt <- ggplot(data=subset(bb_ci_dat_s2), 
+                      aes(x=mean_ci_width, y=outcome, color=model)) + 
+               geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
+               facet_grid(~rho_2, labeller = "label_parsed") + 
+               labs(x="mean width of 90% posterior credible interval")
+
+bb_ciwidths_plt
+
 ```
 
 
