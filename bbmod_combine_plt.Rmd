@@ -10,6 +10,7 @@ output: html_document
 # echo=FALSE otherwise (e.g. echo = FALSE if (knitr::is_latex_output()))
 knitr::opts_chunk$set(echo = knitr::is_html_output())
 wdir<-file.path("/home/nathan/Dropbox/njames/school/PhD/misc/conferences/ENAR2019/code")
+figdir<-file.path(wdir,"figs")
 
 # load packages
 libs<-c("copula", "knitr", "magrittr", "ggplot2", "rstan", "plotly", "bayesplot", "ggExtra", "polycor", "ggstance", "cowplot")
@@ -162,6 +163,64 @@ mlt1 <- cbind(mlt0,vars0)
 return(mlt1[,c("s_id","mod","corr")])
 }
 
+
+
+#tmp<- seq(0,1,by=0.1)
+#expand.grid(tmp,tmp)
+
+#load(file.path(wdir,"sims","bb",paste0("bb_sim_",1,".RData")), .GlobalEnv)
+#load(file.path(wdir,"sims","bb",paste0("bb_sim_",2,".RData")), .GlobalEnv)
+
+# prob of technical success 
+potus<- function(delta_e, delta_p, dat=diffs){
+  
+  potus0 <- function(delta_e, delta_p, dat){
+    mean(dat[,1]>=delta_e & dat[,2]<=delta_p)*100
+  }
+  
+  #vectorize
+  mapply(function(x,y) potus0(x,y,dat), delta_e, delta_p)
+}
+
+#de<-seq(70,130,length=50)
+#ds<-seq(0,0.5,length=50)
+#pp<-outer(de,ds,potus)
+#pp0<-outer(de,ds,potus,dat=diffs0)
+
+
+# function to get prob of technical success given sim_id
+g_seq <- seq(0,1,by=0.05)
+
+potus_bb_sim <- function(s_id, grd = g_seq){
+  
+  # run helper to calculate risk diff for efficacy and safety
+  getriskdiff(s_id)
+  
+  diffs_i <- cbind(p_e_i_diff,p_s_i_diff)
+  diffs_j <- cbind(p_e_j_diff,p_s_j_diff)
+  
+  potus_i <- outer(grd,grd,potus, dat=diffs_i)
+  potus_j <- outer(grd,grd,potus, dat=diffs_j)
+
+  potus_labs <- c("potus_i", "potus_j")
+  potus_vec <- c(potus_i,potus_j)
+
+  grd2<-expand.grid(grd,grd)
+  grd_nms<-paste0(grd2[,1],"_",grd2[,2])
+  names(potus_vec)<-paste0(sort(rep(potus_labs, length(grd)^2 )),"_g_",grd_nms)
+  
+  c(s_id=s_id, potus_vec)
+}
+
+# function to reshape combined output of potus_bb_sim
+reshaper5 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="potus_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("potus","mod","g","g_e","g_s"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","mod","g_e","g_s","potus_g")])
+}
+
+
 # function to batch read-in and processing of data
 # batches are deleted after loading
 doBatch <- function(all_sim_ids, batchsize){
@@ -194,6 +253,11 @@ doBatch <- function(all_sim_ids, batchsize){
     # pp_jnt_bb_sim for batch - joint posterior probs >= grid value
     assign(paste0("bb_pp_jnt_dat0_",i),
              data.frame(do.call(rbind, lapply(sims_in_batch, pp_jnt_bb_sim))),
+             envir=.GlobalEnv)
+    
+    # potus_bb_sim for batch - prob of technical success
+    assign(paste0("bb_potus_dat0_",i),
+             data.frame(do.call(rbind, lapply(sims_in_batch, potus_bb_sim))),
              envir=.GlobalEnv)
     
     # corr_bb_sim for batch - correlation between posterior probs
@@ -229,18 +293,20 @@ bb_sim_files <- dir(file.path(wdir,"sims","bb"), pattern=".RData")
 bb_sim_files_num0 <- substr(bb_sim_files,8,50)
 bb_sim_files_num <- as.numeric(do.call(rbind,strsplit(bb_sim_files_num0,".R"))[,1])
 
-#! nsims <- length(bb_sim_files) # don't need this
 bb_sim_array_ord_run <- subset(bb_sim_array_ord, sim_id %in% bb_sim_files_num)
 rm(bb_sim_array, bb_sim_array_ord, bb_sim_files_num0, nreps, nscn, sc_id)
 
-
+# placebo group vals
+p_e1 <- 0.2 # prob effective
+p_s1 <- 0.1 # prob AE
+rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
 ```
 
 ```{r batch_process}
 # load and process sims in batches
-bsize <- 250
+bsize <- 300
 
-#doBatch(bb_sim_files_num[1:275], 100)
+#doBatch(bb_sim_files_num[1:500], 100)
 doBatch(bb_sim_files_num, bsize)
 ```
 
@@ -272,77 +338,43 @@ bb_corr_dat1 <- reshaper4(bb_corr_dat0)
 bb_corr_dat<-merge(bb_sim_array_ord_run, bb_corr_dat1, by.x="sim_id",by.y="s_id")
 rm(list=bb_corr_vec)
 rm(bb_corr_dat0, bb_corr_vec)
+
+bb_potus_vec <- ls()[grep("bb_potus_dat0_",ls())]
+bb_potus_dat0 <- do.call(rbind, sapply(bb_potus_vec, get,simplify = FALSE) )
+bb_potus_dat1 <- reshaper5(bb_potus_dat0)
+bb_potus_dat <- merge(bb_sim_array_ord_run, bb_potus_dat1, by.x="sim_id",by.y="s_id")
+rm(list=bb_potus_vec)
+rm(bb_potus_dat0,bb_potus_vec)
 ```
 
 ## Plots of credible intervals
 
+### raw intervals
+
 ```{r bb-ci-plt}
 
-# placebo group vals
-p_e1 <- 0.2 # prob effective
-p_s1 <- 0.1 # prob AE
-rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
-
 # better labels for risk differences, models, outcome
-bb_ci_dat %<>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
+bb_ci_dat_cln <- bb_ci_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
                       model = factor(mod,c("i","j"), c("independent","copula")),
                       outcome = factor(outcome, c("e","s"), c("efficacy","safety")))
 
-if (0){
-#too much!
-ggplot(data=bb_ci_dat, aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2)) + facet_grid(n~rho_2+p_e2+p_s2)
-
-ggplot(data=bb_ci_dat,aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) + 
-  geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
-  geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.4) + facet_grid(n~rho_2+p_e2+p_s2)
-
-# better
-ggplot(data=subset(bb_ci_dat,rho_2==0.35), aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2)) + facet_grid(n~p_e2+p_s2)
-
-ggplot(data=subset(bb_ci_dat,rho_2==0.35),aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
-  geom_linerangeh(position=position_dodgev(height=0.4), alpha=0.4) + facet_grid(n~p_e2+p_s2)
-}
-
-# these might be better using diffs credible interval width
-if (0){
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==50),
-       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
-#    geom_point(aes(shape=mod), size=3, position=position_dodgev(height=0.4), alpha=0.5) +
-    geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) + 
-    facet_grid(delta_e~delta_s,labeller = "label_both")
-
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==100),
-       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
-  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
-  facet_grid(delta_e~delta_s,labeller = "label_both")
-
-ggplot(data=subset(bb_ci_dat,rho_2==0.35 & n==200),
-       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
-  geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
-  facet_grid(delta_e~delta_s,labeller = "label_both")
-
-# with 400 really tight
-
-}
-
-
-bb_ci_n100_1 <- ggplot(data=subset(bb_ci_dat, rho_2==0.1 & n==100),
+bb_ci_n100_1 <- ggplot(data=subset(bb_ci_dat_cln, rho_2==0.1 & n==100),
             aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
           geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
-          facet_grid(delta_e~delta_s, labeller = "label_both")
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
 
-# + theme(legend.position = "none", axis.text.x= element_text(size=10))
-
-bb_ci_n100_2 <- ggplot(data=subset(bb_ci_dat, rho_2==0.35 & n==100), 
+bb_ci_n100_2 <- ggplot(data=subset(bb_ci_dat_cln, rho_2==0.35 & n==100), 
             aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
           geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
-          facet_grid(delta_e~delta_s, labeller = "label_both")
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
 
-bb_ci_n100_3 <- ggplot(data=subset(bb_ci_dat, rho_2==0.6 & n==100), 
+bb_ci_n100_3 <- ggplot(data=subset(bb_ci_dat_cln, rho_2==0.6 & n==100), 
             aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
           geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
-          facet_grid(delta_e~delta_s, labeller = "label_both")
-
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
 
 bb_ci_n100 <- plot_grid(bb_ci_n100_1, bb_ci_n100_2, bb_ci_n100_3,
                       labels=c("rho_2=0.1","rho_2=0.35","rho_2=0.6"), 
@@ -351,8 +383,10 @@ bb_ci_n100 <- plot_grid(bb_ci_n100_1, bb_ci_n100_2, bb_ci_n100_3,
 bb_ci_n100
 ```
 
-```{r}
-bb_ci_dat_summ <- bb_ci_dat %>% 
+### credible interval widths
+
+```{r bb-ci-widths-plt}
+bb_ci_dat_summ <- bb_ci_dat_cln %>% 
   select(-c(dat_seed, samp_seed, mod)) %>% 
   arrange(scn_id,rep_id) %>% 
   mutate(ci_width = q0.95 - q0.05) %>%
@@ -361,8 +395,6 @@ bb_ci_dat_summ <- bb_ci_dat %>%
 
 bb_ci_dat_summ2 <- bb_ci_dat_summ %>% mutate(delta_e=factor(delta_e,c(0,0.3,0.6), c("delta[e]==0","delta[e]==0.3","delta[e]==0.6")),
       delta_s=factor(delta_s,c(0,0.3,0.6), c("delta[s]==0","delta[s]==0.3","delta[s]==0.6")))    
-
-bb_ci_dat_summ2
 
 if(0){
 ggplot(data=subset(bb_ci_dat_summ,rho_2==0.1 & n==400),
@@ -379,9 +411,7 @@ ggplot(data=subset(bb_ci_dat_summ,rho_2==0.6 & n==400),
        aes(x=mean_ci_width, y=outcome, color=model)) +   
    geom_point(aes(shape=model), size=2, position=position_dodgev(height=0.4), alpha=0.75) +
     facet_grid(delta_e~delta_s,labeller = "label_both")
-}
 
-if (0){
 bb_ciw_r01 <- ggplot(data=subset(bb_ci_dat_summ,rho_2==0.1),
        aes(x=mean_ci_width, y=outcome, color=model)) +   
    geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
@@ -425,16 +455,18 @@ bb_ciw_r06 <-ggplot(data=subset(bb_ci_dat_summ2, rho_2==0.6),
    labs(x="mean width of 90% posterior credible interval")
 
 # plot shows average 90% quantile posterior credible interval widths for independent and copula models across a range of true efficacy and safety risk differences and sample sizes
-
 bb_ciwidths_sub_plt <- plot_grid(bb_ciw_r01, bb_ciw_r035, bb_ciw_r06, ncol=3,
                       labels= paste("rho_t =",c(0.1,0.35,0.6)) , 
                       rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
-  
 
+png(file.path(figdir,"bb_ciwidths_sub_plt.png"), width=1800, height=600, pointsize=5)
+bb_ciwidths_sub_plt # <-- output for poster?
+dev.off()
 ```
 
-```{r}
-bb_ci_dat_s <- bb_ci_dat %>% 
+```{r bb-ci-widths-overall-plt}
+# summarize over subgroups of different delta_e and delta_s
+bb_ci_dat_s <- bb_ci_dat_cln %>% 
   select(-c(dat_seed, samp_seed, mod, p_e2, p_s2)) %>% 
   arrange(scn_id,rep_id) %>% 
   mutate(ci_width = q0.95 - q0.05) %>%
@@ -446,32 +478,80 @@ bb_ci_dat_s2 <- bb_ci_dat_s %>% ungroup() %>% mutate(rho_2=factor(rho_2,c(0.1,0.
 bb_ciwidths_plt <- ggplot(data=subset(bb_ci_dat_s2), 
                       aes(x=mean_ci_width, y=outcome, color=model)) + 
                geom_point(aes(size=n), position=position_dodgev(height=0.4), alpha=0.5) +
-               facet_grid(~rho_2, labeller = "label_parsed") + 
-               labs(x="mean width of 90% posterior credible interval")
+               xlim(c(0.05,0.3)) +
+               scale_size_continuous(range = c(5, 10), breaks=c(0,50,100,200,400)) +
+               facet_grid(.~rho_2, labeller = "label_parsed") + 
+               labs(x="mean width of 90% posterior credible interval") +
+               guides(color = guide_legend(override.aes = list(size = 5)))
 
-bb_ciwidths_plt
-
-```
+bb_ciwidths_plt # <-- output for poster
 
 
-```{r, eval=FALSE}
-# test with single scenerio
-subset(bb_ci_dat,scn_id==72)
+my_thm <- list(theme(legend.title = element_text(size=30),
+                    plot.title = element_text(size=30),
+                    axis.title = element_text(size=25),
+                    axis.text.y = element_text(size=20),
+                    axis.text.x = element_text(size=18),
+                    strip.text.x = element_text(size=20),
+                    legend.text = element_text(size=20),
+                    panel.spacing.x = unit(5.0, "lines") ) )
 
-ggplot(data=subset(bb_ci_dat,scn_id==72), aes(x=q0.5, y=outcome, group=mod)) + geom_point(aes(shape=mod), position=position_dodgev(height=0.2))
 
-ggplot(data=subset(bb_ci_dat,scn_id==72),
-       aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) + 
- #  geom_point(aes(shape=mod), position=position_dodgev(height=0.4), alpha=0.4) +
-  geom_linerangeh(position=position_dodgev(height=0.4), size=3, alpha=0.2) 
-
+png(file.path(figdir,"bb_ciwidths_plt.png"), width=900, height=600, pointsize=5)
+bb_ciwidths_plt + my_thm
+dev.off()
 ```
 
 
 ## Plots of separate posterior probs greater than g
 ```{r bb-pp-plt}
+# better labels for risk differences, models, outcome
+bb_pp_dat_cln <- bb_pp_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")),
+                      outcome = factor(outcome, c("e","s"), c("efficacy","safety"))) %>%
+                  select(-c(dat_seed,samp_seed,mod,p_e2,p_s2)) 
 
-bb_pp_dat_srt<-bb_pp_dat %>% arrange(rep_id,outcome,mod,g)
+ggplot(data=subset(bb_pp_dat_cln,rho_2==0.35 & n==200 & model=="copula"), 
+       aes(x=g, y=pp_gt_g, color=outcome, group=interaction(outcome,rep_id))) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") + theme(legend.position = "none", axis.text.x= element_text(size=10))
+
+
+bb_pp_dat_summ <- bb_pp_dat_cln %>% 
+  arrange(scn_id, outcome, model, g) %>%
+  group_by(scn_id, outcome, model, g) %>%
+  summarise(mean_pp_gt_g = mean(pp_gt_g), n=mean(n), rho_2=mean(rho_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+
+
+ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==200 & outcome=="efficacy"), 
+       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==400 & outcome=="efficacy"), 
+       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+# get difference in posterior prob of being greater than g for eff and safety
+sub1_bb_pp_dat_summ<-subset(bb_pp_dat_summ, model=="independent") %>% rename(mn_pp_gt_g_i=mean_pp_gt_g)
+sub2_bb_pp_dat_summ<-subset(bb_pp_dat_summ, model=="copula") %>% rename(mn_pp_gt_g_j=mean_pp_gt_g)
+
+
+
+bb_pp_dat_summ_diff<-merge(sub1_bb_pp_dat_summ, sub2_bb_pp_dat_summ, by=c("scn_id", "g", "n", "rho_2", "delta_e", "delta_s","outcome")) %>% mutate(mn_pp_gt_g_diff=mn_pp_gt_g_i-mn_pp_gt_g_j)
+
+ggplot(data=subset(bb_pp_dat_summ_diff, n==400 & outcome=="safety"), 
+       aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2) )) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_pp_dat_summ_diff, n==400 & outcome=="efficacy"), 
+       aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2) )) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+
+```
+
+
+```{r}
+bb_pp_dat_srt <- bb_pp_dat %>% arrange(rep_id,outcome,mod,g)
 #ss<-subset(bb_pp_dat,scn_id==72)
 #table(ss$mod,ss$outcome,ss$rep_id)
 
@@ -488,7 +568,6 @@ ggplot(data=subset(bb_pp_dat,scn_id==72),
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) + facet_grid(outcome~.)
 }
-
 
 ggplot(data=subset(bb_pp_dat,scn_id==3 & rep_id==37), 
        aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
@@ -516,11 +595,11 @@ ggplot(data=subset(bb_pp_dat,scn_id==3),
 
 
 
-g1<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="e"), 
+ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="e"), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both")
 
-g2<-ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="s"), 
+ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50 & outcome=="s"), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) + facet_grid(p_e2~p_s2,labeller = "label_both")
 
@@ -557,7 +636,72 @@ ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50), aes(x=g, y=pp_gt_g, group=rep
 
 ## Plots of joint posterior prob greater than g
 ```{r bb-pp-jnt-plt}
+bb_pp_jnt_dat_cln <- bb_pp_jnt_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
+                  select(-c(dat_seed,samp_seed,mod,p_e2,p_s2,jnt)) 
 
+bb_pp_jnt_dat_summ <- bb_pp_jnt_dat_cln %>% 
+  arrange(scn_id, model, g) %>%
+  group_by(scn_id, model, g) %>%
+  summarise(mean_pp_gt_g = mean(pp_gt_g), n=mean(n), rho_2=mean(rho_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+
+
+if (0){
+ggplot(data=subset(bb_pp_jnt_dat_summ,scn_id==72), 
+       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
+  geom_line(alpha=0.6) 
+
+ggplot(data=subset(bb_pp_jnt_dat_summ,scn_id==1), 
+       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
+  geom_line(alpha=0.6) 
+
+
+ggplot(data=subset(bb_pp_jnt_dat_summ, rho_2==0.1 & n==100), 
+       aes(x=g, y=mean_pp_gt_g, color=model, group=model )) + 
+  geom_line(alpha=0.6) + facet_grid(delta_e~delta_s,labeller = "label_both")
+}
+
+
+
+# get difference in posterior prob of being greater than g for eff and safety
+sub1_pp_jnt_dat_summ<-subset(bb_pp_jnt_dat_summ, model=="independent") %>% rename(mn_pp_gt_g_i=mean_pp_gt_g)
+sub2_pp_jnt_dat_summ<-subset(bb_pp_jnt_dat_summ, model=="copula") %>% rename(mn_pp_gt_g_j=mean_pp_gt_g)
+
+
+bb_pp_jnt_dat_summ_diff<-merge(sub1_pp_jnt_dat_summ, sub2_pp_jnt_dat_summ, by=c("scn_id", "g", "n", "rho_2", "delta_e", "delta_s")) %>% mutate(mn_pp_gt_g_diff=mn_pp_gt_g_i-mn_pp_gt_g_j)
+
+
+if (0){
+  # difference is ind mod - copula model, so >0 means ind model has higher post. prob of being > g
+ggplot(data=subset(bb_pp_jnt_dat_summ_diff, rho_2==0.1 & n==100), 
+       aes(x=g, y=mn_pp_gt_g_diff)) + 
+  geom_line(alpha=0.2) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_pp_jnt_dat_summ_diff, rho_2==0.1), 
+       aes(x=g, y=mn_pp_gt_g_diff, color=factor(n), group=factor(n))) + 
+  geom_line(alpha=0.8) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+ggplot(data=subset(bb_pp_jnt_dat_summ_diff, n==100), 
+       aes(x=g, y=mn_pp_gt_g_diff, color=factor(rho_2), group=factor(rho_2))) + 
+  geom_line(alpha=0.8) + facet_grid(delta_e~delta_s,labeller = "label_both")
+}
+
+
+
+ggplot(data=subset(bb_pp_jnt_dat_summ_diff, rho_2==0.1 & n==100), 
+       aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j)) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+
+ggplot(data=subset(bb_pp_jnt_dat_summ_diff, n==200), 
+       aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2))) + 
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+
+
+```
+
+
+```{r bb-pp-jnt-plt}
 
 # 
 ggplot(data=subset(bb_pp_jnt_dat,scn_id==72), 
@@ -620,71 +764,159 @@ p6<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.6 & n==100),
 ```
 
 
+## Plots of probability of technical success
+```{r}
+
+bb_potus_dat_cln <- bb_potus_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
+                  select(-c(dat_seed,samp_seed,mod,p_e2,p_s2)) 
+
+bb_potus_dat_summ <- bb_potus_dat_cln %>% 
+  arrange(scn_id, model, g_e, g_s) %>%
+  group_by(scn_id, model, g_e, g_s) %>%
+  summarise(mn_potus = mean(potus_g), n=mean(n), rho_2=mean(rho_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+
+# colors for potus
+num_cols<-20
+potus_col <-rev(rainbow(20, start = 0/6, end = 4/6))
+
+# see https://stackoverflow.com/questions/23908114/creating-a-colour-gradient-around-zero-in-filled-contour
+myFilled.contour <- function(x = seq(0, 1, length.out = nrow(z)),
+                             y = seq(0, 1, length.out = ncol(z)),
+                             z, nlevels=30, ...) {
+  ma <- max(abs(z))
+  lvls <- seq(-ma, ma, length.out = nlevels)
+  cols <- colorRampPalette(c("blue","white","red")) (nlevels - 1)
+  filled.contour(x, y, z, plot.axes={axis(1); axis(2)},
+                 col=cols, levels=lvls, ...)
+}
+
+
+
+# plot potus for given scenario id
+plot_potus<-function(id, num){
+zvec_i <- unlist(subset(bb_potus_dat_summ, scn_id==id & model=="independent", select=c("mn_potus")))
+
+zvec_j <- unlist(subset(bb_potus_dat_summ, scn_id==id & model=="copula", select=c("mn_potus")))
+
+zvec_chg <- zvec_i - zvec_j
+  
+zmat_i <- matrix(zvec_i, nrow=length(g_seq))
+zmat_j <- matrix(zvec_j, nrow=length(g_seq))
+zmat_chg <- matrix(zvec_chg, nrow=length(g_seq))
+
+if (num==1){
+filled.contour(g_seq, g_seq, z=t(zmat_i), col = potus_col, 
+               key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(g_seq,g_seq,t(zmat_i), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
+} else if (num==2){
+  
+filled.contour(g_seq, g_seq, z=t(zmat_j), col = potus_col, 
+               key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(g_seq,g_seq,t(zmat_j), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
+} else {
+myFilled.contour(g_seq, g_seq, z=t(zmat_chg), 
+               key.title=title(main = "Diff. in \nPosterior \nProbability (%)",
+                               cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]))
+}
+}
+
+table(bb_sim_array_ord_run$scn_id)
+
+scn_ids_uniq<-bb_sim_array_ord_run %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1) %>%
+  select(n,rho_2,delta_e,delta_s,scn_id) %>% unique()
+
+scn_ids_uniq %>% filter(n==200 & delta_e>0 & delta_s>0)
+
+#plot_potus(68)
+
+png(file.path(figdir,"bb_potus_r035_plt1.png"), width=900, height=600, pointsize=20)
+plot_potus(69,1) # <--
+dev.off()
+
+png(file.path(figdir,"bb_potus_r035_plt2.png"), width=900, height=600, pointsize=20)
+plot_potus(69,2) # <--
+dev.off()
+
+png(file.path(figdir,"bb_potus_r035_plt3.png"), width=900, height=600, pointsize=20)
+plot_potus(69,3) # <--
+dev.off()
+
+#plot_potus(71)
+#plot_potus(72)
+
+
+plot_potus(78) # <--
+
+
+```
+
 ## Plots of correlation between posterior parameter distributions
 ```{r bb-corr-plt}
 
-ggplot(data=subset(corr_dat,scn_id==72), aes(x=corr, fill=mod)) + geom_density()
+ggplot(data=subset(bb_corr_dat,scn_id==72), aes(x=corr, fill=mod)) + geom_density()
 
-ggplot(data=subset(corr_dat,rho_2==0.35 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(p_e2~p_s2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,rho_2==0.35 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(p_e2~p_s2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, y=mod)) +  geom_violinh(alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, y=mod)) +  geom_violinh(alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
 if (0){
-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.1),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.4),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.7),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 }
 
 
 if (1){
 
-pl1 <- ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+pl1 <- ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
     geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl2 <-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
+pl2 <-ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl3 <-ggplot(data=subset(corr_dat,p_e2==0.2 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
+pl3 <-ggplot(data=subset(bb_corr_dat,p_e2==0.2 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl4 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+pl4 <-ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl5 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
+pl5 <-ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl6 <-ggplot(data=subset(corr_dat,p_e2==0.5 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
+pl6 <-ggplot(data=subset(bb_corr_dat,p_e2==0.5 & p_s2==0.7 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl7 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
+pl7 <-ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.1 & n==100),aes(x=corr, fill=mod)) +  
   geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl8 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+pl8 <-ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.4 & n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 
-pl9 <-ggplot(data=subset(corr_dat,p_e2==0.8 & p_s2==0.7& n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
+pl9 <-ggplot(data=subset(bb_corr_dat,p_e2==0.8 & p_s2==0.7& n==100),aes(x=corr, fill=mod)) +  geom_density( alpha=0.1) + facet_grid(n~rho_2,labeller = "label_both")
 }
 
 
-png("bb_corr_pe2_02_p_s2_01_n100.png",width=720,height=720)
+png(file.path(figdir,"bb_corr_pe2_02_p_s2_01_n100.png"),width=720,height=720)
 pl1
 dev.off()  
   
 
-png("bb_corr_pe2_05_p_s2_04_n100.png",width=720,height=720)
+png(file.path(figdir,"bb_corr_pe2_05_p_s2_04_n100.png"),width=720,height=720)
 pl5
 dev.off()
 
