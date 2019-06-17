@@ -691,14 +691,9 @@ ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==200 & outcome=="safety"),
   ggtitle("Mean posterior prob. of p_safety > g", subtitle="n=200, rho_2=0.35") +
   ylab("mean posterior prob. p_safety > g")
 
-#ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==400 & outcome=="efficacy"), 
-#       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
-#  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
-
 # get difference in posterior prob of being greater than g for eff and safety
 sub1_bb_pp_dat_summ<-subset(bb_pp_dat_summ, model=="independent") %>% rename(mn_pp_gt_g_i=mean_pp_gt_g)
 sub2_bb_pp_dat_summ<-subset(bb_pp_dat_summ, model=="copula") %>% rename(mn_pp_gt_g_j=mean_pp_gt_g)
-
 
 bb_pp_dat_summ_diff<-merge(sub1_bb_pp_dat_summ, sub2_bb_pp_dat_summ, by=c("scn_id", "g", "n", "rho_2", "delta_e", "delta_s","outcome")) %>% mutate(mn_pp_gt_g_diff=mn_pp_gt_g_i-mn_pp_gt_g_j)
 
@@ -798,7 +793,6 @@ ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50), aes(x=g, y=pp_gt_g, group=rep
 
 ```
 
-
 ## Plots of joint posterior prob greater than g
 
 ```{r bb-pp-jnt-plt-summ, fig.align="center"}
@@ -810,7 +804,6 @@ bb_pp_jnt_dat_summ <- bb_pp_jnt_dat_cln %>%
   arrange(scn_id, model, g) %>%
   group_by(scn_id, model, g) %>%
   summarise(mean_pp_gt_g = mean(pp_gt_g), n=mean(n), rho_2=mean(rho_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
-
 
 if (0){
 ggplot(data=subset(bb_pp_jnt_dat_summ,scn_id==72), 
@@ -830,7 +823,6 @@ sub2_pp_jnt_dat_summ<-subset(bb_pp_jnt_dat_summ, model=="copula") %>% rename(mn_
 
 
 bb_pp_jnt_dat_summ_diff<-merge(sub1_pp_jnt_dat_summ, sub2_pp_jnt_dat_summ, by=c("scn_id", "g", "n", "rho_2", "delta_e", "delta_s")) %>% mutate(mn_pp_gt_g_diff=mn_pp_gt_g_i-mn_pp_gt_g_j)
-
 
 if (0){
   # difference is ind mod - copula model, so >0 means ind model has higher post. prob of being > g
@@ -920,12 +912,9 @@ png(file.path(figdir,"bb_pp_jnt_diff_r035_n100.png"),width=720,height=720)
 p5
 dev.off()
 
-
 p6<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.6 & n==100), 
        aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
   geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
-
-
 ```
 
 
@@ -992,6 +981,7 @@ myFilled.contour(g_seq, g_seq, z=t(zmat_chg),
 }
 }
 
+# number of reps under each simulation scenario
 #table(bb_sim_array_ord_run$scn_id)
 
 scn_ids_uniq<-bb_sim_array_ord_run %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1) %>%
@@ -1011,9 +1001,6 @@ dev.off()
 png(file.path(figdir,"bb_pots_r035_plt3.png"), width=900, height=600, pointsize=20)
 plot_pots(69,3) # <--
 dev.off()
-
-#plot_pots(71)
-#plot_pots(72)
 
 plot_pots(78,3) # <--
 
@@ -1086,121 +1073,5 @@ dev.off()
 png(file.path(figdir,"bb_corr_pe2_05_p_s2_04_n100.png"),width=720,height=720)
 pl5
 dev.off()
-
-```
-
-
-### scratch below
-make function looking at correlation between p_e[2]- p_e[1] and p_s[2] - p_s[1]
-```{r, eval=FALSE}
-
-# old code to make corr_bb_sim
-for (i in 1:5){
-  load(file.path(wdir,"sims","bb",paste0("bb_sim_",i,".RData")))
-}
-
-# function to get correlation posterior eff risk diff and safety risk diff
-corr_bb_sim <- function(s_id){
-  
-  # ind efficacy
-  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
-  
-  # ind safety
-  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
-  
-  corr_i <- cor(p_e_i_diff, p_s_i_diff) 
-  
-  # joint mod
-  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
-  
-  # joint mod efficacy
-  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
-  
-  # joint mod safety
-  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
-  
-  corr_j <- cor(p_e_j_diff, p_s_j_diff) 
-  
-  c(s_id=s_id,corr_ind = corr_i,corr_jnt=corr_j)
-}
-
-corr_bb_sim(1)
-corr_bb_sim(2)
-corr_bb_sim(3)
-corr_bb_sim(4)
-
-
-corr_dat0<- data.frame(do.call(rbind, lapply(1:5, corr_bb_sim)))
-
-ds<-corr_dat0
-
-
-# function to reshape combined output of pp_jnt_bb_sim
-reshaper4 <- function(ds){
-mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="corr")
-vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("corr","mod"))
-mlt1 <- cbind(mlt0,vars0)
-return(mlt1[,c("s_id","mod","corr")])
-}
-
-merge(bb_sim_array_ord_run, corr_dat0, by.x="sim_id",by.y="s_id")
-
-
-# old code to make pp_jnt_bb_sim
-for (i in 1:5){
-  load(file.path(wdir,"sims","bb",paste0("bb_sim_",i,".RData")))
-}
-
-# function to get posterior probabilities of joint outcome
-pp_jnt_bb_sim <- function(s_id, grd = seq(0,1,by=0.01) ){
-  
-  # ind efficacy
-  p_e_i_diff <- rowDiff(get(paste0("samp_bb_e_",s_id)))
-  
-  # ind safety
-  p_s_i_diff <- rowDiff(get(paste0("samp_bb_s_",s_id)))
-  
-  pp_jnt_i_gt <- sapply(grd,function(g) mean(p_e_i_diff > g & p_s_i_diff > g)) 
-  
-  # joint mod
-  samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
-  
-  # joint mod efficacy
-  p_e_j_diff <-rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")])
-  
-  # joint mod safety
-  p_s_j_diff <- rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")])
-  
-  pp_jnt_j_gt <- sapply(grd,function(g) mean(p_s_j_diff > g & p_e_j_diff > g))
-
-  
-  #! order matters here because of labels
-  postps <- c("pp_jnt_i_gt", "pp_jnt_j_gt")
-  postps_ls <- lapply(postps , function(x) get(x))
-  postps_vec <- unlist(postps_ls) 
-  
-  names(postps_vec) <- paste0(sort(rep(postps, length(grd))),"_g_",grd)
-  
-  c(s_id=s_id,postps_vec)
-}
-
-ds<-pp_jnt_bb_sim(1)
-
-bb_pp_jnt_dat0<- data.frame(do.call(rbind, lapply(1:5, pp_jnt_bb_sim)))
-
-ds <- bb_pp_jnt_dat0
-mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
-vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","jnt","mod","foo","bar","g"))
-mlt1 <- cbind(mlt0,vars0)
-
-# function to reshape combined output of pp_bb_sim
-reshaper3 <- function(ds){
-mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pp_gt_g")
-vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pp","jnt","mod","foo","bar","g"))
-mlt1 <- cbind(mlt0,vars0)
-return(mlt1[,c("s_id","jnt","mod","g","pp_gt_g")])
-}
-
-reshaper3(ds)
 
 ```
