@@ -1,0 +1,253 @@
+---
+title: "Operating Characteristics of Bayesian Joint Benefit-Risk Copula Models plots"
+author: "Nathan T. James"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#For code block want echo=TRUE if (knitr::is_html_output())
+# echo=FALSE otherwise (e.g. echo = FALSE if (knitr::is_latex_output()))
+knitr::opts_chunk$set(echo = knitr::is_html_output())
+wdir<-file.path("/home/nathan/Dropbox/njames/school/PhD/misc/conferences/ENAR2019/code")
+figdir<-file.path(wdir,"figs")
+
+# load packages
+libs<-c("copula", "knitr", "magrittr", "ggplot2", "rstan", "plotly", "bayesplot", "ggExtra", "polycor", "ggstance", "cowplot")
+invisible(lapply(libs, library, character.only = TRUE))
+```
+
+```{r funs}
+# helper function for row differences
+rowDiff <- function(mat){
+  mat[,1] <- mat[,1]*-1
+  return(rowSums(mat))
+}
+
+# helper to calculate risk diff for efficacy and safety
+getriskdiff <- function(s_id){
+  
+  # ind efficacy and safety risk difference
+  assign("mu_e_i_diff",rowDiff(get(paste0("samp_cb_e_",s_id))[,c(1,2)] ), pos = parent.frame())
+  assign("p_s_i_diff",rowDiff(get(paste0("samp_cb_s_",s_id))), pos = parent.frame())
+  
+  # joint mod
+  samp_cb_jnt <- get(paste0("samp_cb_jnt_",s_id))
+  
+  # joint mod efficacy and safety risk difference
+  assign("mu_e_j_diff", rowDiff(samp_cb_jnt[,c("mu[1]","mu[2]")]), pos = parent.frame())
+  assign("p_s_j_diff", rowDiff(samp_cb_jnt[,c("p[1]","p[2]")]), pos = parent.frame())
+  
+}
+
+# prob of technical success 
+potus<- function(delta_e, delta_p, dat=diffs){
+  
+  potus0 <- function(delta_e, delta_p, dat){
+    mean(dat[,1]>=delta_e & dat[,2]<=delta_p)*100
+  }
+  
+  #vectorize
+  mapply(function(x,y) potus0(x,y,dat), delta_e, delta_p)
+}
+
+# function to get prob of technical success given sim_id
+mu_seq <- seq(0,150,by=10)
+p_seq <- seq(0,1,by=0.05)
+
+potus_cb_sim <- function(s_id, grd1 = mu_seq, grd2 = p_seq){
+  
+  # run helper to calculate risk diff for efficacy and safety
+  getriskdiff(s_id)
+  
+  diffs_i <- cbind(mu_e_i_diff,p_s_i_diff)
+  diffs_j <- cbind(mu_e_j_diff,p_s_j_diff)
+  
+  potus_i <- outer(grd1,grd2,potus, dat=diffs_i)
+  potus_j <- outer(grd1,grd2,potus, dat=diffs_j)
+
+  potus_labs <- c("potus_i", "potus_j")
+  potus_vec <- c(potus_i, potus_j)
+
+  grd_ex<-expand.grid(grd1, grd2)
+  grd_nms<-paste0(grd_ex[,1],"_",grd_ex[,2])
+  names(potus_vec)<-paste0(sort(rep(potus_labs, nrow(grd_ex) )),"_g_",grd_nms)
+  
+  c(s_id=s_id, potus_vec)
+}
+
+# function to reshape combined output of potus_cb_sim
+reshaper5 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="potus_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("potus","mod","g","g_e","g_s"))
+mlt1 <- cbind(mlt0,vars0)
+return(mlt1[,c("s_id","mod","g_e","g_s","potus_g")])
+}
+
+
+# function to batch read-in and processing of data
+# batches are deleted after loading
+doBatch <- function(all_sim_ids, batchsize){
+  
+  sim_ids_split <- split(all_sim_ids, ceiling(seq_along(all_sim_ids)/batchsize))
+  batches <- length(sim_ids_split)
+  
+  for (i in 1:batches){
+    
+    sims_in_batch <- sim_ids_split[[i]] 
+    
+    for (j in seq_along(sims_in_batch)){
+      # load data
+      s_id <- sims_in_batch[j]
+      load(file.path(wdir,"sims","cb",paste0("cb_sim_",s_id,".RData")), .GlobalEnv)
+    }
+    
+    # print(sims_in_batch) # for debugging
+  
+    # potus_cb_sim for batch - prob of technical success
+    assign(paste0("cb_potus_dat0_",i),
+             data.frame(do.call(rbind, lapply(sims_in_batch, potus_cb_sim))),
+             envir=.GlobalEnv)
+    
+    # remove loaded datasets, samples, summaries and sim params for batch
+    rm(list=ls(envir=.GlobalEnv)[grep("dat_cb_|samp_cb_|summ_cb_|sim_params_",
+                                      ls(envir=.GlobalEnv))], envir=.GlobalEnv)
+  }
+  
+}
+
+```
+
+```{r preprocess}
+# read in array with sim params
+cb_sim_array <- readRDS(file.path(wdir,"cb_sim_array.rds"))
+cb_sim_array_ord <- cb_sim_array[order(cb_sim_array$n,
+                                       cb_sim_array$rho_2,
+                                       cb_sim_array$mu_2,
+                                       cb_sim_array$p_2,
+                                       cb_sim_array$rep_id),]
+
+nreps <- 100
+nscn <- nrow(cb_sim_array)/nreps
+sc_id <- sort(rep(1:nscn,nreps))
+cb_sim_array_ord$scn_id <- sc_id
+
+# simulation files
+cb_sim_files <- dir(file.path(wdir,"sims","cb"), pattern=".RData")
+cb_sim_files_num0 <- substr(cb_sim_files,8,50)
+cb_sim_files_num <- as.numeric(do.call(rbind,strsplit(cb_sim_files_num0,".R"))[,1])
+
+cb_sim_array_ord_run <- subset(cb_sim_array_ord, sim_id %in% cb_sim_files_num)
+rm(cb_sim_array, cb_sim_array_ord, cb_sim_files_num0, nreps, nscn, sc_id)
+
+# placebo group vals
+mu_1 <- 0.2 # prob effective
+p_1 <- 0.1 # prob AE
+rho_1 <- 0.1 # polyserial correlation
+```
+
+```{r batch_process}
+# load and process sims in batches
+bsize <- 300
+
+#doBatch(cb_sim_files_num[1:500], 100)
+doBatch(cb_sim_files_num, bsize)
+```
+
+```{r batch_postprocess}
+# add processing code for other stats
+
+cb_potus_vec <- ls()[grep("cb_potus_dat0_",ls())]
+cb_potus_dat0 <- do.call(rbind, sapply(cb_potus_vec, get,simplify = FALSE) )
+cb_potus_dat1 <- reshaper5(cb_potus_dat0)
+cb_potus_dat <- merge(cb_sim_array_ord_run, cb_potus_dat1, by.x="sim_id",by.y="s_id")
+rm(list=cb_potus_vec)
+rm(cb_potus_dat0,cb_potus_vec)
+```
+
+## Plots of probability of technical success
+```{r}
+
+cb_potus_dat_cln <- cb_potus_dat %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
+                  select(-c(dat_seed,samp_seed,mod,mu_2,p_2)) 
+
+cb_potus_dat_summ <- cb_potus_dat_cln %>% 
+  arrange(scn_id, model, g_e, g_s) %>%
+  group_by(scn_id, model, g_e, g_s) %>%
+  summarise(mn_potus = mean(potus_g), n=mean(n), rho_2=mean(rho_2), sigma2_2=mean(sigma2_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+
+# colors for potus
+num_cols<-20
+potus_col <-rev(rainbow(20, start = 0/6, end = 4/6))
+
+# see https://stackoverflow.com/questions/23908114/creating-a-colour-gradient-around-zero-in-filled-contour
+myFilled.contour <- function(x = seq(0, 1, length.out = nrow(z)),
+                             y = seq(0, 1, length.out = ncol(z)),
+                             z, nlevels=30, ...) {
+  ma <- max(abs(z))
+  lvls <- seq(-ma, ma, length.out = nlevels)
+  cols <- colorRampPalette(c("blue","white","red")) (nlevels - 1)
+  filled.contour(x, y, z, plot.axes={axis(1); axis(2)},
+                 col=cols, levels=lvls, ...)
+}
+
+
+# plot potus for given scenario id
+plot_potus<-function(id, num){
+zvec_i <- unlist(subset(cb_potus_dat_summ, scn_id==id & model=="independent", select=c("mn_potus")))
+
+zvec_j <- unlist(subset(cb_potus_dat_summ, scn_id==id & model=="copula", select=c("mn_potus")))
+
+zvec_chg <- zvec_i - zvec_j
+  
+zmat_i <- matrix(zvec_i, nrow=length(p_seq))
+zmat_j <- matrix(zvec_j, nrow=length(p_seq))
+zmat_chg <- matrix(zvec_chg, nrow=length(p_seq))
+
+if (num==1){
+filled.contour(mu_seq, p_seq, z=t(zmat_i), col = potus_col, 
+               key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(mu_seq,p_seq,t(zmat_i), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
+} else if (num==2){
+filled.contour(mu_seq, p_seq, z=t(zmat_j), col = potus_col, 
+               key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(mu_seq,p_seq,t(zmat_j), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
+} else {
+myFilled.contour(mu_seq, p_seq, z=t(zmat_chg), 
+               key.title=title(main = "Diff. in \nPosterior \nProbability (%)",
+                               cex.main=0.7), 
+               xlab=expression(Delta[E]), ylab=expression(Delta[S]))
+}
+}
+
+#plot_potus(69,3)
+
+#table(cb_sim_array_ord_run$scn_id)
+
+scn_ids_uniq<-cb_sim_array_ord_run %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1) %>%
+  select(n,rho_2,delta_e,delta_s,scn_id) %>% unique()
+
+scn_ids_uniq %>% filter(n==200 & delta_s>0)
+scn_ids_uniq %>% filter(scn_id==69)
+
+#plot_potus(68)
+
+png(file.path(figdir,"cb_potus_r035_plt1.png"), width=900, height=600, pointsize=20)
+plot_potus(69,1) # <--
+dev.off()
+
+png(file.path(figdir,"cb_potus_r035_plt2.png"), width=900, height=600, pointsize=20)
+plot_potus(69,2) # <--
+dev.off()
+
+png(file.path(figdir,"cb_potus_r035_plt3.png"), width=900, height=600, pointsize=20)
+plot_potus(69,3) # <--
+dev.off()
+
+
+
+plot_potus(78) # <--
+
+
+```
