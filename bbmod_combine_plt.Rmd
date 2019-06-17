@@ -991,15 +991,15 @@ scn_ids_uniq<-bb_sim_array_ord_run %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_
 #scn_ids_uniq %>% filter(n==200 & delta_e>0 & delta_s>0)
 
 png(file.path(figdir,"bb_pots_r035_plt1.png"), width=900, height=600, pointsize=20)
-plot_pots(69,1) # <--
+plot_pots(69,1) # <-- indep
 dev.off()
 
 png(file.path(figdir,"bb_pots_r035_plt2.png"), width=900, height=600, pointsize=20)
-plot_pots(69,2) # <--
+plot_pots(69,2) # <-- copula
 dev.off()
 
 png(file.path(figdir,"bb_pots_r035_plt3.png"), width=900, height=600, pointsize=20)
-plot_pots(69,3) # <--
+plot_pots(69,3) # <-- difference (indep - copula)
 dev.off()
 
 plot_pots(78,3) # <--
