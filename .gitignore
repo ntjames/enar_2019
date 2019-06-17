@@ -13,6 +13,8 @@ bbmod_combine_plt_cache/
 bbmod_combine_plt_files/
 
 *.rds
+*.csv
+*.html 
 
 code\.Rproj
 
