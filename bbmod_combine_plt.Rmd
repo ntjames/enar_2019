@@ -1,8 +1,20 @@
 ---
 title: "Operating Characteristics of Bayesian Joint Benefit-Risk Copula Models plots"
+subtitle: "Bivariate binary-binary outcome"
 author: "Nathan T. James"
-date: "`r Sys.Date()`"
-output: html_document
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    toc: no
+    toc_depth: 3
+    number_sections: false
+    toc_float:
+      collapsed: false
+    code_folding: hide
+    theme: paper
+code_folding: hide
+editor_options:
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -17,25 +29,29 @@ libs<-c("copula", "knitr", "magrittr", "ggplot2", "rstan", "plotly", "bayesplot"
 invisible(lapply(libs, library, character.only = TRUE))
 ```
 
+## Read and process simulation data
+
+### helper functions
+
 ```{r funs, cache=TRUE}
 
-# helper function for row differences
+# calculate row differences
 rowDiff <- function(mat){
   mat[,1] <- mat[,1]*-1
   return(rowSums(mat))
 }
 
-# helper to calculate risk diff for efficacy and safety
+# calculate risk difference for efficacy and safety
 getriskdiff <- function(s_id){
   
-  # ind efficacy and safety risk difference
+  # ind. model efficacy and safety risk difference
   assign("p_e_i_diff",rowDiff(get(paste0("samp_bb_e_",s_id))), pos = parent.frame())
   assign("p_s_i_diff",rowDiff(get(paste0("samp_bb_s_",s_id))), pos = parent.frame())
   
-  # joint mod
+  # joint mod data
   samp_bb_jnt <- get(paste0("samp_bb_jnt_",s_id))
   
-  # joint mod efficacy and safety risk difference
+  # joint model efficacy and safety risk difference
   assign("p_e_j_diff", rowDiff(samp_bb_jnt[,c("p_e[1]","p_e[2]")]), pos = parent.frame())
   assign("p_s_j_diff", rowDiff(samp_bb_jnt[,c("p_s[1]","p_s[2]")]), pos = parent.frame())
   
@@ -48,7 +64,7 @@ ci_bb_sim <- function(s_id, qtile = c(0.05,0.5,0.95) ){
   # run helper to calculate risk diff for efficacy and safety
   getriskdiff(s_id)
   
-  #! order matters here because of labels
+  #! NB: order matters here because of labels
   diffs <- c("p_e_i_diff", "p_e_j_diff", "p_s_i_diff", "p_s_j_diff")
   diffs_ci <- lapply(diffs, function(x) quantile(get(x), qtile))
   diffs_ci_vec <- unlist(diffs_ci) 
@@ -84,7 +100,7 @@ pp_bb_sim <- function(s_id, grd = seq(0,1,by=0.01) ){
   # posterior prob safety diff from joint copula model greater than g
   pp_s_j_gt <- sapply(grd,function(g) mean(p_s_j_diff > g))
 
-  #! order matters here because of labels
+  #! NB: order matters here because of labels
   postps <- c("pp_e_i_gt", "pp_e_j_gt", "pp_s_i_gt", "pp_s_j_gt")
   postps_ls <- lapply(postps, function(x) get(x))
   postps_vec <- unlist(postps_ls) 
@@ -138,7 +154,7 @@ return(mlt1[,c("s_id","jnt","mod","g","pp_gt_g")])
 }
 
 
-# function to get correlation posterior eff risk diff and safety risk diff
+# function to get correlation between posterior efficacy risk diff and safety risk diff
 corr_bb_sim <- function(s_id){
   
   # run helper to calculate risk diff for efficacy and safety
@@ -164,7 +180,6 @@ return(mlt1[,c("s_id","mod","corr")])
 }
 
 
-
 #tmp<- seq(0,1,by=0.1)
 #expand.grid(tmp,tmp)
 
@@ -172,7 +187,7 @@ return(mlt1[,c("s_id","mod","corr")])
 #load(file.path(wdir,"sims","bb",paste0("bb_sim_",2,".RData")), .GlobalEnv)
 
 # prob of technical success 
-pots<- function(delta_e, delta_p, dat=diffs){
+pots <- function(delta_e, delta_p, dat=diffs){
   
   pots0 <- function(delta_e, delta_p, dat){
     mean(dat[,1]>=delta_e & dat[,2]<=delta_p)*100
@@ -187,10 +202,9 @@ pots<- function(delta_e, delta_p, dat=diffs){
 #pp<-outer(de,ds,pots)
 #pp0<-outer(de,ds,pots,dat=diffs0)
 
-
-# function to get prob of technical success given sim_id
 g_seq <- seq(0,1,by=0.05)
 
+# function to get prob of technical success given sim_id
 pots_bb_sim <- function(s_id, grd = g_seq){
   
   # run helper to calculate risk diff for efficacy and safety
@@ -199,8 +213,8 @@ pots_bb_sim <- function(s_id, grd = g_seq){
   diffs_i <- cbind(p_e_i_diff,p_s_i_diff)
   diffs_j <- cbind(p_e_j_diff,p_s_j_diff)
   
-  pots_i <- outer(grd,grd,pots, dat=diffs_i)
-  pots_j <- outer(grd,grd,pots, dat=diffs_j)
+  pots_i <- outer(grd, grd, pots, dat=diffs_i)
+  pots_j <- outer(grd, grd, pots, dat=diffs_j)
 
   pots_labs <- c("pots_i", "pots_j")
   pots_vec <- c(pots_i,pots_j)
@@ -221,7 +235,8 @@ return(mlt1[,c("s_id","mod","g_e","g_s","pots_g")])
 }
 
 
-# function to batch read-in and processing of data
+# function to read in and process simulation data in batches 
+# (since all data cannot fit in memory at once)
 # batches are deleted after loading
 doBatch <- function(all_sim_ids, batchsize){
   
@@ -274,8 +289,10 @@ doBatch <- function(all_sim_ids, batchsize){
 
 ```
 
+### Read in array with simulation parameters and list of simulation datasets
+
 ```{r preprocess, cache=TRUE}
-# read in array with sim params
+# read in array with simulation parameters
 bb_sim_array <- readRDS(file.path(wdir,"bb_sim_array.rds"))
 bb_sim_array_ord <- bb_sim_array[order(bb_sim_array$n,
                                        bb_sim_array$rho_2,
@@ -290,7 +307,7 @@ sc_id <- sort(rep(1:nscn,nreps))
 bb_sim_array_ord$scn_id <- sc_id
 
 
-# simulation files
+# list of simulation files
 bb_sim_files <- dir(file.path(wdir,"sims","bb"), pattern=".RData")
 bb_sim_files_num0 <- substr(bb_sim_files,8,50)
 bb_sim_files_num <- as.numeric(do.call(rbind,strsplit(bb_sim_files_num0,".R"))[,1])
@@ -304,6 +321,8 @@ p_s1 <- 0.1 # prob AE
 rho_1 <- 0.1 # tetrachoric correlation, can estimate with polycor::polychor
 ```
 
+### Process simulation datasets in batches
+
 ```{r batch_process, cache=TRUE}
 # load and process sims in batches
 bsize <- 300
@@ -312,27 +331,29 @@ bsize <- 300
 doBatch(bb_sim_files_num, bsize)
 ```
 
+### Combine all batches 
+
 ```{r batch_postprocess, cache=TRUE}
 bb_ci_vec <- ls()[grep("bb_ci_dat0_",ls())]
 bb_ci_dat0 <- do.call(rbind,sapply(bb_ci_vec, get,simplify = FALSE))
 bb_ci_dat1 <- reshaper1(bb_ci_dat0)
 bb_ci_dat <- merge(bb_sim_array_ord_run, bb_ci_dat1, by.x="sim_id",by.y="s_id")
 rm(list=bb_ci_vec)
-rm(bb_ci_dat0,bb_ci_vec)
+rm(bb_ci_dat0, bb_ci_vec)
 
 bb_pp_vec <- ls()[grep("bb_pp_dat0_",ls())]
 bb_pp_dat0 <- do.call(rbind, sapply(bb_pp_vec, get,simplify = FALSE) )
 bb_pp_dat1 <- reshaper2(bb_pp_dat0)
 bb_pp_dat <- merge(bb_sim_array_ord_run, bb_pp_dat1, by.x="sim_id",by.y="s_id")
 rm(list=bb_pp_vec)
-rm(bb_pp_dat0,bb_pp_vec)
+rm(bb_pp_dat0, bb_pp_vec)
 
 bb_pp_jnt_vec <- ls()[grep("bb_pp_jnt_dat0_",ls())]
 bb_pp_jnt_dat0 <- do.call(rbind, sapply(bb_pp_jnt_vec, get,simplify = FALSE) )
 bb_pp_jnt_dat1 <- reshaper3(bb_pp_jnt_dat0)
 bb_pp_jnt_dat <- merge(bb_sim_array_ord_run, bb_pp_jnt_dat1, by.x="sim_id",by.y="s_id")
 rm(list=bb_pp_jnt_vec)
-rm(bb_pp_jnt_dat0,bb_pp_jnt_vec)
+rm(bb_pp_jnt_dat0, bb_pp_jnt_vec)
 
 bb_corr_vec<-ls()[grep("bb_corr_dat0_",ls())]
 bb_corr_dat0<-do.call(rbind, sapply(bb_corr_vec, get,simplify = FALSE) )
@@ -346,14 +367,16 @@ bb_pots_dat0 <- do.call(rbind, sapply(bb_pots_vec, get,simplify = FALSE) )
 bb_pots_dat1 <- reshaper5(bb_pots_dat0)
 bb_pots_dat <- merge(bb_sim_array_ord_run, bb_pots_dat1, by.x="sim_id",by.y="s_id")
 rm(list=bb_pots_vec)
-rm(bb_pots_dat0,bb_pots_vec)
+rm(bb_pots_dat0, bb_pots_vec)
 ```
 
 ## Plots of credible intervals
 
-### raw intervals
+### Credible intervals
 
-```{r bb-ci-plt}
+Plots of the raw credible intervals are similar for the joint bivariate copula model and the independent univariate models. The joint model intervals that are much wider seem to occur when the underlying Bayesian copula model fails to converge. 
+
+```{r bb-ci-plt, fig.height=8, fig.width=14}
 
 # better labels for risk differences, models, outcome
 bb_ci_dat_cln <- bb_ci_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
@@ -382,16 +405,24 @@ bb_ci_n100 <- plot_grid(bb_ci_n100_1, bb_ci_n100_2, bb_ci_n100_3,
                       labels=c("rho_2=0.1","rho_2=0.35","rho_2=0.6"), 
                       rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
 
+bb_ci_n100
+
 # date & time tag
-dt <- gsub("\\.","_",make.names(Sys.time()))
-bb_ci_plt <- paste0("bb_ci_n100_plt_",dt,".png")
+#dt <- gsub("\\.","_",make.names(Sys.time()))
+#bb_ci_plt <- paste0("bb_ci_n100_plt_",dt,".png")
+
+bb_ci_plt <- "bb_ci_n100_plt.png"
 
 png(file.path(figdir,bb_ci_plt), width=1800, height=600, pointsize=5)
 bb_ci_n100
 dev.off()
 ```
 
-### credible interval widths
+### Credible interval widths
+
+## Mean credible interval widths
+
+Since some of the joint copula model simulations didn't converge (and therefore had very large interval widths) using the mean interval width will give the impression that the joint model is *less* efficient than the independent model. Instead, we can use median interval width which will mitigate the effect of these outliers to some degree.
 
 ```{r bb-ci-widths-mean-plt, eval=FALSE}
 bb_ci_dat_summ <- bb_ci_dat_cln %>% 
@@ -475,7 +506,11 @@ bb_ciwidths_sub_plt # <-- output for poster?
 dev.off()
 ```
 
-```{r bb-ci-widths-median-plt}
+## Median credible interval widths
+
+For most scenarios, the credible interval widths for the joint copula model are the same size or smaller than independent model credible interval widths. An exception is the somewhat extreme scenario with $\rho_t=0.6$, $\delta_s=0.6$ and $\delta_e=0$ which posits a large correlation between the safety and efficacy outcome for the treated group, a large safety risk difference, but no efficacy risk difference. 
+
+```{r bb-ci-widths-median-plt, fig.height=6, fig.width=16}
 bb_ci_dat_med_summ <- bb_ci_dat_cln %>% 
   select(-c(dat_seed, samp_seed, mod)) %>% 
   arrange(scn_id,rep_id) %>% 
@@ -488,7 +523,7 @@ bb_ci_dat_med_summ2 <- bb_ci_dat_med_summ %>% mutate(delta_e=factor(delta_e,c(0,
 
 # horizontal dodge amount
 dodgeamt<-0.4
-#dodgeamt<-0
+# dodgeamt<-0
 
 bb_mdciw_r01 <-ggplot(data=subset(bb_ci_dat_med_summ2, rho_2==0.1),
        aes(x=med_ci_width, y=outcome, color=model)) +   
@@ -518,15 +553,20 @@ bb_mdciwidths_sub_plt <- plot_grid(bb_mdciw_r01, bb_mdciw_r035, bb_mdciw_r06, nc
                       labels= paste("rho_t =",c(0.1,0.35,0.6)) , 
                       rel_widths=c(1,1,1.4), scale=0.85, label_size=11) 
 
-dt <- gsub("\\.","_",make.names(Sys.time()))
-bb_mdciw_subplt <- paste0("bb_mdciwidths_sub_plt_",dt,".png")
+bb_mdciwidths_sub_plt
+
+# add date tag
+#dt <- gsub("\\.","_",make.names(Sys.time()))
+#bb_mdciw_subplt <- paste0("bb_mdciwidths_sub_plt_",dt,".png")
+
+bb_mdciw_subplt <- "bb_mdciwidths_sub_plt.png"
 
 png(file.path(figdir,bb_mdciw_subplt), width=1800, height=600, pointsize=5)
 bb_mdciwidths_sub_plt
 dev.off()
 ```
 
-
+In addition, we can summarize over the scenarios to look at overall trends in credible interval width between the joint copula model and the independent models. The large degree of overlap indicates minimal efficiency gains from fitting the joint model to bivariate binary-binary outcomes.
 
 ```{r bb-ci-widths-overall-mean-plt, eval=FALSE}
 # summarize over subgroups of different delta_e and delta_s
@@ -566,8 +606,7 @@ bb_ciwidths_plt + my_thm
 dev.off()
 ```
 
-
-```{r bb-ci-widths-overall-median-plt}
+```{r bb-ci-widths-overall-median-plt, fig.height=4, fig.width=10}
 # summarize over subgroups of different delta_e and delta_s
 bb_mdci_dat_s <- bb_ci_dat_cln %>% 
   select(-c(dat_seed, samp_seed, mod, p_e2, p_s2)) %>% 
@@ -602,7 +641,6 @@ bb_mdciwidths_plt <- ggplot(data=subset(bb_mdci_dat_s2),
 
 bb_mdciwidths_plt # <-- output for poster
 
-
 my_thm <- list(theme(legend.title = element_text(size=30),
                     plot.title = element_text(size=30),
                     axis.title = element_text(size=25),
@@ -620,8 +658,8 @@ dev.off()
 
 
 ## Plots of separate posterior probs greater than g
-```{r bb-pp-plt}
-# better labels for risk differences, models, outcome
+```{r bb-pp-plt, fig.align="center"}
+# make better labels for risk differences, models, outcome
 bb_pp_dat_cln <- bb_pp_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
                       model = factor(mod,c("i","j"), c("independent","copula")),
                       outcome = factor(outcome, c("e","s"), c("efficacy","safety"))) %>%
@@ -629,7 +667,10 @@ bb_pp_dat_cln <- bb_pp_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1,
 
 ggplot(data=subset(bb_pp_dat_cln,rho_2==0.35 & n==200 & model=="copula"), 
        aes(x=g, y=pp_gt_g, color=outcome, group=interaction(outcome,rep_id))) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") + theme(legend.position = "none", axis.text.x= element_text(size=10))
+  geom_line(alpha=0.4) + facet_grid(delta_e~delta_s,labeller = "label_both") + #theme(legend.position = "none", axis.text.x= element_text(size=10))+
+  theme(axis.text.x= element_text(size=10))+
+  ggtitle("MCMC draws of Posterior prob. outcome > g from copula model", 
+          subtitle="n=200, rho_2=0.35") + ylab("posterior prob. outcome > g")
 
 
 bb_pp_dat_summ <- bb_pp_dat_cln %>% 
@@ -640,11 +681,19 @@ bb_pp_dat_summ <- bb_pp_dat_cln %>%
 
 ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==200 & outcome=="efficacy"), 
        aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") +
+  ggtitle("Mean posterior prob. of p_efficacy > g", subtitle="n=200, rho_2=0.35") +
+  ylab("mean posterior prob. p_efficacy > g")
 
-ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==400 & outcome=="efficacy"), 
+ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==200 & outcome=="safety"), 
        aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") +
+  ggtitle("Mean posterior prob. of p_safety > g", subtitle="n=200, rho_2=0.35") +
+  ylab("mean posterior prob. p_safety > g")
+
+#ggplot(data=subset(bb_pp_dat_summ, rho_2==0.35 & n==400 & outcome=="efficacy"), 
+#       aes(x=g, y=mean_pp_gt_g, color=model, group=model)) + 
+#  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
 
 # get difference in posterior prob of being greater than g for eff and safety
 sub1_bb_pp_dat_summ<-subset(bb_pp_dat_summ, model=="independent") %>% rename(mn_pp_gt_g_i=mean_pp_gt_g)
@@ -655,16 +704,21 @@ bb_pp_dat_summ_diff<-merge(sub1_bb_pp_dat_summ, sub2_bb_pp_dat_summ, by=c("scn_i
 
 ggplot(data=subset(bb_pp_dat_summ_diff, n==400 & outcome=="safety"), 
        aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2) )) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") +
+  ggtitle("Mean posterior prob. of p_safety > g", subtitle="joint copula model vs. independent models, n=400") +
+  xlab("mean posterior prob. p_safety > g (independent model)") +
+  ylab("mean posterior prob. p_safety > g (copula model)")
 
 ggplot(data=subset(bb_pp_dat_summ_diff, n==400 & outcome=="efficacy"), 
        aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2) )) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both") +
+  ggtitle("Mean posterior prob. of p_efficacy > g", subtitle="joint copula model vs. independent models, n=400") +
+  xlab("mean posterior prob. p_efficacy > g (independent model)") +
+  ylab("mean posterior prob. p_efficacy > g (copula model)")
 
 ```
 
-
-```{r}
+```{r, eval=FALSE}
 bb_pp_dat_srt <- bb_pp_dat %>% arrange(rep_id,outcome,mod,g)
 #ss<-subset(bb_pp_dat,scn_id==72)
 #table(ss$mod,ss$outcome,ss$rep_id)
@@ -686,7 +740,7 @@ ggplot(data=subset(bb_pp_dat,scn_id==72),
 ggplot(data=subset(bb_pp_dat,scn_id==3 & rep_id==37), 
        aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
 
-png("bb_pp_scn3_r5.png",width=720,height=720)
+png(file.path(figdir,"bb_pp_scn3_r5.png"),width=720,height=720)
 ggplot(data=subset(bb_pp_dat,scn_id==3 & rep_id==5), 
        aes(x=g, y=pp_gt_g, linetype=outcome)) + geom_line(aes(col=mod))
 dev.off()
@@ -694,7 +748,7 @@ dev.off()
 ggplot(data=subset(bb_pp_dat,scn_id==3), aes(x=g, y=pp_gt_g, group=rep_id)) + geom_line(alpha=0.5) + facet_grid(mod~outcome)
 
 # 
-png("bb_pp_scn3.png",width=720,height=720)
+png(file.path(figdir,"bb_pp_scn3.png"),width=720,height=720)
 ggplot(data=subset(bb_pp_dat,scn_id==3), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) + facet_grid(.~outcome)
@@ -742,14 +796,12 @@ save_plot("bb_pp_r035_n200.png",g6,base_height=5,base_width=10)
 
 ggplot(data=subset(bb_pp_dat,rho_2==0.35 & n==50), aes(x=g, y=pp_gt_g, group=rep_id)) + geom_line(aes(col=mod)) + facet_grid(outcome+p_e2~p_s2,labeller = "label_both")
 
-
-
-
 ```
 
 
 ## Plots of joint posterior prob greater than g
-```{r bb-pp-jnt-plt-summ}
+
+```{r bb-pp-jnt-plt-summ, fig.align="center"}
 bb_pp_jnt_dat_cln <- bb_pp_jnt_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
                       model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
                   select(-c(dat_seed,samp_seed,mod,p_e2,p_s2,jnt)) 
@@ -797,20 +849,25 @@ ggplot(data=subset(bb_pp_jnt_dat_summ_diff, n==100),
 
 ggplot(data=subset(bb_pp_jnt_dat_summ_diff, rho_2==0.1 & n==100), 
        aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j)) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")  +
+  ggtitle("Mean posterior prob. of (p_eff>g and p_safety>g)", subtitle="joint copula model vs. independent models, rho_2, n=100") +
+  xlab("mean PP of p_eff>g and p_safety>g (independent model)") +
+  ylab("mean PP of p_eff>g and p_safety>g (copula model)")
 
 
 ggplot(data=subset(bb_pp_jnt_dat_summ_diff, n==200), 
        aes(x=mn_pp_gt_g_i, y=mn_pp_gt_g_j, color=factor(rho_2), group=factor(rho_2))) + 
-  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")
-
-
+  geom_line(alpha=0.5) + facet_grid(delta_e~delta_s,labeller = "label_both")  +
+  ggtitle("Mean posterior prob. of (p_eff>g and p_safety>g) > g", subtitle="joint copula model vs. independent models, n=200") +
+  xlab("mean PP of p_eff>g and p_safety>g (independent model)") +
+  ylab("mean PP of p_eff>g and p_safety>g (copula model)")
 ```
 
 
 ```{r bb-pp-jnt-plt}
 
-# 
+# specific simulation scenarios
+if (0){
 ggplot(data=subset(bb_pp_jnt_dat,scn_id==72), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) 
@@ -818,17 +875,19 @@ ggplot(data=subset(bb_pp_jnt_dat,scn_id==72),
 ggplot(data=subset(bb_pp_jnt_dat,scn_id==1), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.5) 
+}
 
-
-p1<-ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.1 & n==100), 
+p1 <- ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.1 & n==100), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
   geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
 
 
-p2<-ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.35 & n==100), 
+p2 <- ggplot(data=subset(bb_pp_jnt_dat, rho_2==0.35 & n==100), 
        aes(x=g, y=pp_gt_g, color=mod, group=interaction(mod,rep_id))) + 
-  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + ggtitle("joint posterior prob. of (eff>g and safety>g) for ind vs. copula models")
-png("bb_pp_jnt_r035_n100.png",width=720,height=720)
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + 
+  ggtitle("joint posterior prob. of (eff>g and safety>g) for ind vs. copula models")
+
+png(file.path(figdir,"bb_pp_jnt_r035_n100.png"),width=720,height=720)
 p2
 dev.off()
 
@@ -843,22 +902,21 @@ sub2<-subset(bb_pp_jnt_dat,mod=="j")
 sub1 %<>% rename(pp_gt_g_i=pp_gt_g)
 sub2 %<>% rename(pp_gt_g_j=pp_gt_g)
 
-
 #merge on sim_id and g
 
 bb_pp_jnt_dat2<-merge(sub1,sub2,by=c("sim_id","g","n","rho_2","p_e2","p_s2","rep_id","scn_id")) %>% select(sim_id,g,n,rho_2,p_e2,p_s2,rep_id,scn_id,g,pp_gt_g_i,pp_gt_g_j) %>% mutate(pp_gt_g_diff=pp_gt_g_i-pp_gt_g_j)
 
-p4<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.1 & n==100), 
+p4 <- ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.1 & n==100), 
        aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
   geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both")
 
 
-p5<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.35 & n==100), 
+p5 <- ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.35 & n==100), 
        aes(x=g, y=pp_gt_g_diff, group=rep_id)) + 
-  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + ggtitle("difference in joint posterior prob of (eff>g and safety>g) for ind vs. copula models")
+  geom_line(alpha=0.2) + facet_grid(p_e2~p_s2,labeller = "label_both") + ggtitle("difference in joint PP of (eff>g and safety>g) for ind vs. copula models")
 
 # difference is ind mod - copula model, so >0 means ind model has higher post. prob of being > g
-png("bb_pp_jnt_diff_r035_n100.png",width=720,height=720)
+png(file.path(figdir,"bb_pp_jnt_diff_r035_n100.png"),width=720,height=720)
 p5
 dev.off()
 
@@ -872,7 +930,12 @@ p6<-ggplot(data=subset(bb_pp_jnt_dat2, rho_2==0.6 & n==100),
 
 
 ## Plots of probability of technical success
-```{r bb-pots-plt}
+
+The probability of technical success (POTS) is the posterior probability of that difference between treatment and control is simultaneously larger than a given efficacy threshold ($\Delta_{E}$) AND smaller than a given safety threshold ($\Delta_{S}$). In simpler terms, "Given the data and our prior knowledge, what is the probability that the treatment is both effective and safe?"
+
+The plot below shows the difference between the POTS fit with an independence assumption and the POTS under the correctly specified joint copula model to contrast the two modeling approaches. Areas in blue indicate that the independence model estimates are too low and areas in red indicate that the independence model estimates are too high.
+
+```{r bb-pots-plt, fig.align="center"}
 
 bb_pots_dat_cln <- bb_pots_dat %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1, 
                       model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
@@ -898,30 +961,30 @@ myFilled.contour <- function(x = seq(0, 1, length.out = nrow(z)),
                  col=cols, levels=lvls, ...)
 }
 
-
-
 # plot pots for given scenario id
 plot_pots<-function(id, num){
 zvec_i <- unlist(subset(bb_pots_dat_summ, scn_id==id & model=="independent", select=c("mn_pots")))
 
 zvec_j <- unlist(subset(bb_pots_dat_summ, scn_id==id & model=="copula", select=c("mn_pots")))
 
-zvec_chg <- zvec_i - zvec_j
+zvec_chg <- zvec_i - zvec_j #independent minus joint model estimates
   
 zmat_i <- matrix(zvec_i, nrow=length(g_seq))
 zmat_j <- matrix(zvec_j, nrow=length(g_seq))
 zmat_chg <- matrix(zvec_chg, nrow=length(g_seq))
 
 if (num==1){
+# ind. models
 filled.contour(g_seq, g_seq, z=t(zmat_i), col = pots_col, 
                key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
                xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(g_seq,g_seq,t(zmat_i), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
 } else if (num==2){
-  
+# joint model  
 filled.contour(g_seq, g_seq, z=t(zmat_j), col = pots_col, 
                key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
                xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(g_seq,g_seq,t(zmat_j), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
 } else {
+# difference between ind. and joint models
 myFilled.contour(g_seq, g_seq, z=t(zmat_chg), 
                key.title=title(main = "Diff. in \nPosterior \nProbability (%)",
                                cex.main=0.7), 
@@ -929,14 +992,13 @@ myFilled.contour(g_seq, g_seq, z=t(zmat_chg),
 }
 }
 
-table(bb_sim_array_ord_run$scn_id)
+#table(bb_sim_array_ord_run$scn_id)
 
 scn_ids_uniq<-bb_sim_array_ord_run %>% mutate(delta_e=p_e2-p_e1, delta_s=p_s2-p_s1) %>%
   select(n,rho_2,delta_e,delta_s,scn_id) %>% unique()
 
-scn_ids_uniq %>% filter(n==200 & delta_e>0 & delta_s>0)
-
-#plot_pots(68)
+# look at the scenario IDs that have certain criteria/parameters
+#scn_ids_uniq %>% filter(n==200 & delta_e>0 & delta_s>0)
 
 png(file.path(figdir,"bb_pots_r035_plt1.png"), width=900, height=600, pointsize=20)
 plot_pots(69,1) # <--
@@ -953,9 +1015,7 @@ dev.off()
 #plot_pots(71)
 #plot_pots(72)
 
-
-plot_pots(78) # <--
-
+plot_pots(78,3) # <--
 
 ```
 
@@ -1084,10 +1144,6 @@ return(mlt1[,c("s_id","mod","corr")])
 }
 
 merge(bb_sim_array_ord_run, corr_dat0, by.x="sim_id",by.y="s_id")
-
-
-
-
 
 
 # old code to make pp_jnt_bb_sim
