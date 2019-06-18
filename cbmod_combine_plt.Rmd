@@ -1,8 +1,20 @@
 ---
 title: "Operating Characteristics of Bayesian Joint Benefit-Risk Copula Models plots"
+subtitle: "Bivariate continuous-binary outcome"
 author: "Nathan T. James"
-date: "`r Sys.Date()`"
-output: html_document
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    toc: no
+    toc_depth: 3
+    number_sections: false
+    toc_float:
+      collapsed: false
+    code_folding: hide
+    theme: paper
+code_folding: hide
+editor_options:
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -17,7 +29,11 @@ libs<-c("copula", "knitr", "magrittr", "ggplot2", "rstan", "plotly", "bayesplot"
 invisible(lapply(libs, library, character.only = TRUE))
 ```
 
-```{r funs}
+## Read and process simulation data
+
+### helper functions
+
+```{r funs, cache=TRUE}
 # helper function for row differences
 rowDiff <- function(mat){
   mat[,1] <- mat[,1]*-1
@@ -40,22 +56,47 @@ getriskdiff <- function(s_id){
   
 }
 
-# prob of technical success 
-potus<- function(delta_e, delta_p, dat=diffs){
+
+# function to get credible interval from samples
+ci_cb_sim <- function(s_id, qtile = c(0.05,0.5,0.95) ){
   
-  potus0 <- function(delta_e, delta_p, dat){
+  # run helper to calculate risk diff for efficacy and safety
+  getriskdiff(s_id)
+  
+  #! NB: order matters here because of labels
+  diffs <- c("mu_e_i_diff", "mu_e_j_diff", "p_s_i_diff", "p_s_j_diff")
+  diffs_ci <- lapply(diffs, function(x) quantile(get(x), qtile))
+  diffs_ci_vec <- unlist(diffs_ci) 
+  names(diffs_ci_vec) <- paste0(sort(rep(diffs,length(qtile))),"_q",qtile)
+  
+  return( c(s_id=s_id, diffs_ci_vec) )
+}
+
+# function to reshape combined output of ci_cb_sim
+reshaper1 <- function(ds){
+mlt0 <- reshape2::melt(ds, id.vars="s_id")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("stat","outcome","mod","diff","qtile"))
+mlt1 <- cbind(mlt0,vars0)
+return(reshape2::dcast(mlt1, s_id+outcome+mod~qtile))
+}
+
+
+# prob of technical success 
+pots<- function(delta_e, delta_p, dat=diffs){
+  
+  pots0 <- function(delta_e, delta_p, dat){
     mean(dat[,1]>=delta_e & dat[,2]<=delta_p)*100
   }
   
   #vectorize
-  mapply(function(x,y) potus0(x,y,dat), delta_e, delta_p)
+  mapply(function(x,y) pots0(x,y,dat), delta_e, delta_p)
 }
 
 # function to get prob of technical success given sim_id
 mu_seq <- seq(0,150,by=10)
 p_seq <- seq(0,1,by=0.05)
 
-potus_cb_sim <- function(s_id, grd1 = mu_seq, grd2 = p_seq){
+pots_cb_sim <- function(s_id, grd1 = mu_seq, grd2 = p_seq){
   
   # run helper to calculate risk diff for efficacy and safety
   getriskdiff(s_id)
@@ -63,25 +104,25 @@ potus_cb_sim <- function(s_id, grd1 = mu_seq, grd2 = p_seq){
   diffs_i <- cbind(mu_e_i_diff,p_s_i_diff)
   diffs_j <- cbind(mu_e_j_diff,p_s_j_diff)
   
-  potus_i <- outer(grd1,grd2,potus, dat=diffs_i)
-  potus_j <- outer(grd1,grd2,potus, dat=diffs_j)
+  pots_i <- outer(grd1,grd2,pots, dat=diffs_i)
+  pots_j <- outer(grd1,grd2,pots, dat=diffs_j)
 
-  potus_labs <- c("potus_i", "potus_j")
-  potus_vec <- c(potus_i, potus_j)
+  pots_labs <- c("pots_i", "pots_j")
+  pots_vec <- c(pots_i, pots_j)
 
   grd_ex<-expand.grid(grd1, grd2)
   grd_nms<-paste0(grd_ex[,1],"_",grd_ex[,2])
-  names(potus_vec)<-paste0(sort(rep(potus_labs, nrow(grd_ex) )),"_g_",grd_nms)
+  names(pots_vec)<-paste0(sort(rep(pots_labs, nrow(grd_ex) )),"_g_",grd_nms)
   
-  c(s_id=s_id, potus_vec)
+  c(s_id=s_id, pots_vec)
 }
 
-# function to reshape combined output of potus_cb_sim
+# function to reshape combined output of pots_cb_sim
 reshaper5 <- function(ds){
-mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="potus_g")
-vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("potus","mod","g","g_e","g_s"))
+mlt0 <- reshape2::melt(ds, id.vars="s_id", value.name="pots_g")
+vars0 <- reshape2::colsplit(mlt0$variable,"_",names=c("pots","mod","g","g_e","g_s"))
 mlt1 <- cbind(mlt0,vars0)
-return(mlt1[,c("s_id","mod","g_e","g_s","potus_g")])
+return(mlt1[,c("s_id","mod","g_e","g_s","pots_g")])
 }
 
 
@@ -104,9 +145,14 @@ doBatch <- function(all_sim_ids, batchsize){
     
     # print(sims_in_batch) # for debugging
   
-    # potus_cb_sim for batch - prob of technical success
-    assign(paste0("cb_potus_dat0_",i),
-             data.frame(do.call(rbind, lapply(sims_in_batch, potus_cb_sim))),
+    # ci_cb_sim for batch - credible intervals
+    assign(paste0("cb_ci_dat0_",i),
+         data.frame(do.call(rbind, lapply(sims_in_batch, ci_cb_sim))),
+         envir=.GlobalEnv)
+    
+    # pots_cb_sim for batch - prob of technical success
+    assign(paste0("cb_pots_dat0_",i),
+             data.frame(do.call(rbind, lapply(sims_in_batch, pots_cb_sim))),
              envir=.GlobalEnv)
     
     # remove loaded datasets, samples, summaries and sim params for batch
@@ -118,7 +164,10 @@ doBatch <- function(all_sim_ids, batchsize){
 
 ```
 
-```{r preprocess}
+### Read in array with simulation parameters and list of simulation datasets
+
+
+```{r preprocess, cache=TRUE}
 # read in array with sim params
 cb_sim_array <- readRDS(file.path(wdir,"cb_sim_array.rds"))
 cb_sim_array_ord <- cb_sim_array[order(cb_sim_array$n,
@@ -141,12 +190,14 @@ cb_sim_array_ord_run <- subset(cb_sim_array_ord, sim_id %in% cb_sim_files_num)
 rm(cb_sim_array, cb_sim_array_ord, cb_sim_files_num0, nreps, nscn, sc_id)
 
 # placebo group vals
-mu_1 <- 0.2 # prob effective
+mu_1 <- -150 # mean efficacy
 p_1 <- 0.1 # prob AE
 rho_1 <- 0.1 # polyserial correlation
 ```
 
-```{r batch_process}
+### Process simulation datasets in batches
+
+```{r batch_process, cache=TRUE}
 # load and process sims in batches
 bsize <- 300
 
@@ -154,32 +205,41 @@ bsize <- 300
 doBatch(cb_sim_files_num, bsize)
 ```
 
-```{r batch_postprocess}
+### Combine all batches 
+
+```{r batch_postprocess, cache=TRUE}
 # add processing code for other stats
 
-cb_potus_vec <- ls()[grep("cb_potus_dat0_",ls())]
-cb_potus_dat0 <- do.call(rbind, sapply(cb_potus_vec, get,simplify = FALSE) )
-cb_potus_dat1 <- reshaper5(cb_potus_dat0)
-cb_potus_dat <- merge(cb_sim_array_ord_run, cb_potus_dat1, by.x="sim_id",by.y="s_id")
-rm(list=cb_potus_vec)
-rm(cb_potus_dat0,cb_potus_vec)
+cb_ci_vec <- ls()[grep("cb_ci_dat0_",ls())]
+cb_ci_dat0 <- do.call(rbind,sapply(cb_ci_vec, get,simplify = FALSE))
+cb_ci_dat1 <- reshaper1(cb_ci_dat0)
+cb_ci_dat <- merge(cb_sim_array_ord_run, cb_ci_dat1, by.x="sim_id",by.y="s_id")
+rm(list=cb_ci_vec)
+rm(cb_ci_dat0, cb_ci_vec)
+
+cb_pots_vec <- ls()[grep("cb_pots_dat0_",ls())]
+cb_pots_dat0 <- do.call(rbind, sapply(cb_pots_vec, get,simplify = FALSE) )
+cb_pots_dat1 <- reshaper5(cb_pots_dat0)
+cb_pots_dat <- merge(cb_sim_array_ord_run, cb_pots_dat1, by.x="sim_id",by.y="s_id")
+rm(list=cb_pots_vec)
+rm(cb_pots_dat0,cb_pots_vec)
 ```
 
 ## Plots of probability of technical success
-```{r}
+```{r cb-pots-plt}
 
-cb_potus_dat_cln <- cb_potus_dat %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1, 
+cb_pots_dat_cln <- cb_pots_dat %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1, 
                       model = factor(mod,c("i","j"), c("independent","copula")) ) %>%
                   select(-c(dat_seed,samp_seed,mod,mu_2,p_2)) 
 
-cb_potus_dat_summ <- cb_potus_dat_cln %>% 
+cb_pots_dat_summ <- cb_pots_dat_cln %>% 
   arrange(scn_id, model, g_e, g_s) %>%
   group_by(scn_id, model, g_e, g_s) %>%
-  summarise(mn_potus = mean(potus_g), n=mean(n), rho_2=mean(rho_2), sigma2_2=mean(sigma2_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
+  summarise(mn_pots = mean(pots_g), n=mean(n), rho_2=mean(rho_2), sigma2_2=mean(sigma2_2), delta_e=mean(delta_e),delta_s=mean(delta_s))
 
-# colors for potus
+# colors for pots
 num_cols<-20
-potus_col <-rev(rainbow(20, start = 0/6, end = 4/6))
+pots_col <-rev(rainbow(20, start = 0/6, end = 4/6))
 
 # see https://stackoverflow.com/questions/23908114/creating-a-colour-gradient-around-zero-in-filled-contour
 myFilled.contour <- function(x = seq(0, 1, length.out = nrow(z)),
@@ -193,11 +253,11 @@ myFilled.contour <- function(x = seq(0, 1, length.out = nrow(z)),
 }
 
 
-# plot potus for given scenario id
-plot_potus<-function(id, num){
-zvec_i <- unlist(subset(cb_potus_dat_summ, scn_id==id & model=="independent", select=c("mn_potus")))
+# plot pots for given scenario id
+plot_pots<-function(id, num){
+zvec_i <- unlist(subset(cb_pots_dat_summ, scn_id==id & model=="independent", select=c("mn_pots")))
 
-zvec_j <- unlist(subset(cb_potus_dat_summ, scn_id==id & model=="copula", select=c("mn_potus")))
+zvec_j <- unlist(subset(cb_pots_dat_summ, scn_id==id & model=="copula", select=c("mn_pots")))
 
 zvec_chg <- zvec_i - zvec_j
   
@@ -206,11 +266,11 @@ zmat_j <- matrix(zvec_j, nrow=length(p_seq))
 zmat_chg <- matrix(zvec_chg, nrow=length(p_seq))
 
 if (num==1){
-filled.contour(mu_seq, p_seq, z=t(zmat_i), col = potus_col, 
+filled.contour(mu_seq, p_seq, z=t(zmat_i), col = pots_col, 
                key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
                xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(mu_seq,p_seq,t(zmat_i), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
 } else if (num==2){
-filled.contour(mu_seq, p_seq, z=t(zmat_j), col = potus_col, 
+filled.contour(mu_seq, p_seq, z=t(zmat_j), col = pots_col, 
                key.title=title(main = "Posterior \nProbability (%)", cex.main=0.7), 
                xlab=expression(Delta[E]), ylab=expression(Delta[S]), plot.axes = {contour(mu_seq,p_seq,t(zmat_j), labcex=1.1, nlevels=6, add=TRUE,vfont =c("sans serif", "bold"));axis(1);axis(2)} )
 } else {
@@ -221,7 +281,7 @@ myFilled.contour(mu_seq, p_seq, z=t(zmat_chg),
 }
 }
 
-#plot_potus(69,3)
+#plot_pots(69,3)
 
 #table(cb_sim_array_ord_run$scn_id)
 
@@ -231,23 +291,175 @@ scn_ids_uniq<-cb_sim_array_ord_run %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1
 scn_ids_uniq %>% filter(n==200 & delta_s>0)
 scn_ids_uniq %>% filter(scn_id==69)
 
-#plot_potus(68)
+#plot_pots(68)
 
-png(file.path(figdir,"cb_potus_r035_plt1.png"), width=900, height=600, pointsize=20)
-plot_potus(69,1) # <--
+png(file.path(figdir,"cb_pots_r03_plt1.png"), width=900, height=600, pointsize=20)
+plot_pots(69,1) # <--
 dev.off()
 
-png(file.path(figdir,"cb_potus_r035_plt2.png"), width=900, height=600, pointsize=20)
-plot_potus(69,2) # <--
+png(file.path(figdir,"cb_pots_r03_plt2.png"), width=900, height=600, pointsize=20)
+plot_pots(69,2) # <--
 dev.off()
 
-png(file.path(figdir,"cb_potus_r035_plt3.png"), width=900, height=600, pointsize=20)
-plot_potus(69,3) # <--
+png(file.path(figdir,"cb_pots_r03_plt3.png"), width=900, height=600, pointsize=20)
+plot_pots(69,3) # <--
 dev.off()
 
+# plot_pots(78) # <--
 
 
-plot_potus(78) # <--
+```
+
+## Plots of credible intervals
+
+### Credible intervals
+
+Plots of the raw credible intervals are similar for the joint bivariate copula model and the independent univariate models. The joint model intervals that are much wider seem to occur when the underlying Bayesian copula model fails to converge. 
+
+```{r cb-ci-plt, fig.height=8, fig.width=14}
+
+# better labels for risk differences, models, outcome
+cb_ci_dat_cln <- cb_ci_dat %>% mutate(delta_e=mu_2-mu_1, delta_s=p_2-p_1, 
+                      model = factor(mod,c("i","j"), c("independent","copula")),
+                      outcome = factor(outcome, c("e","s"), c("efficacy","safety")))
+
+cb_ci_n100_1s <-ggplot(data=subset(cb_ci_dat_cln, rho_2==0.1 & n==100 & outcome=="safety"),
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
+
+cb_ci_n100_1e <-ggplot(data=subset(cb_ci_dat_cln, rho_2==0.1 & n==100 & outcome=="efficacy"),
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
 
 
+cb_ci_n100_2s <- ggplot(data=subset(cb_ci_dat_cln, rho_2==0.3 & n==100 & outcome=="safety"), 
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
+
+
+cb_ci_n100_2e <- ggplot(data=subset(cb_ci_dat_cln, rho_2==0.3 & n==100 & outcome=="efficacy"), 
+            aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=model)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
+
+cb_ci_n100_3s <- ggplot(data=subset(cb_ci_dat_cln, rho_2==0.5 & n==100 & outcome=="safety"),  aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
+
+cb_ci_n100_3e <- ggplot(data=subset(cb_ci_dat_cln, rho_2==0.5 & n==100 & outcome=="efficacy"),  aes(x=q0.5, xmin=q0.05, xmax=q0.95, y=outcome, color=mod)) +   
+          geom_linerangeh(position=position_dodgev(height=0.4), size=2, alpha=0.15) +
+          facet_grid(delta_e~delta_s, labeller = "label_both") + 
+          theme(legend.position = "none")
+
+cb_ci_n100 <- plot_grid(cb_ci_n100_1s, cb_ci_n100_1e, 
+                        cb_ci_n100_2s, cb_ci_n100_2e, 
+                        cb_ci_n100_3s, cb_ci_n100_3e,
+                      labels=c("rho_2=0.1","rho_2=0.1","rho_2=0.3","rho_2=0.3",
+                               "rho_2=0.5","rho_2=0.5"), 
+                      nrow = 3, ncol=2, scale=0.85, label_size=11) 
+
+cb_ci_n100
+
+# date & time tag
+#dt <- gsub("\\.","_",make.names(Sys.time()))
+#cb_ci_plt <- paste0("cb_ci_n100_plt_",dt,".png")
+
+cb_ci_plt <- "cb_ci_n100_plt.png"
+
+png(file.path(figdir,cb_ci_plt), width=1800, height=600, pointsize=5)
+cb_ci_n100
+dev.off()
+```
+
+### Credible interval widths
+
+```{r cb-ci-widths-median-plt, fig.height=7, fig.width=14}
+cb_ci_dat_med_summ <- cb_ci_dat_cln %>% 
+  select(-c(dat_seed, samp_seed, mod)) %>% 
+  arrange(scn_id,rep_id) %>% 
+  mutate(ci_width = q0.95 - q0.05) %>%
+  group_by(scn_id, outcome, model) %>%
+  summarise(med_ci_width = median(ci_width), n=median(n), rho_2=median(rho_2), delta_e=median(delta_e),delta_s=median(delta_s))
+
+cb_ci_dat_med_summ2 <- cb_ci_dat_med_summ %>% mutate(delta_e=factor(delta_e,c(0,100,150), c("delta[e]==0","delta[e]==100","delta[e]==150")),
+      delta_s=factor(delta_s,c(0,0.3,0.6), c("delta[s]==0","delta[s]==0.3","delta[s]==0.6")))    
+
+# horizontal dodge amount
+dodgeamt<-0.6
+#dodgeamt<-0
+
+cb_mdciw_r01s <- ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.1 & outcome=="safety"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+
+cb_mdciw_r01e <- ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.1 & outcome=="efficacy"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+
+cb_mdciw_r03s <-ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.3 & outcome=="safety"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+   
+cb_mdciw_r03e <-ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.3 & outcome=="efficacy"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+
+cb_mdciw_r05s <- ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.5 & outcome=="safety"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval") +
+   theme(legend.position = "none")
+
+cb_mdciw_r05e <- ggplot(data=subset(cb_ci_dat_med_summ2, rho_2==0.5 & outcome=="efficacy"),
+       aes(x=med_ci_width, y=outcome, color=model)) +   
+   geom_point(aes(size=n), position=position_dodgev(height=dodgeamt), alpha=0.5) +
+    facet_grid(delta_e~delta_s, labeller = "label_parsed") + 
+  scale_color_brewer(palette="Set1") + 
+   labs(x="median width of 90% posterior credible interval")
+
+# plot shows median 90% quantile posterior credible interval widths for independent and copula models across a range of true efficacy and safety risk differences and sample sizes
+cb_mdciwidths_sub_plt <- plot_grid(cb_mdciw_r01s, cb_mdciw_r01e, 
+                                   cb_mdciw_r03s, cb_mdciw_r03e,
+                                   cb_mdciw_r05s, cb_mdciw_r05e, 
+                                   ncol=2,
+                      labels= sort(rep(paste("rho_t =",c(0.1,0.3,0.5)),2)) , 
+                      rel_widths=c(1,1.4), scale=0.85, label_size=11) 
+
+cb_mdciwidths_sub_plt
+
+# add date tag
+#dt <- gsub("\\.","_",make.names(Sys.time()))
+#cb_mdciw_subplt <- paste0("cb_mdciwidths_sub_plt_",dt,".png")
+
+cb_mdciw_subplt <- "cb_mdciwidths_sub_plt.png"
+
+png(file.path(figdir,cb_mdciw_subplt), width=1600, height=800, pointsize=5)
+cb_mdciwidths_sub_plt
+dev.off()
 ```
